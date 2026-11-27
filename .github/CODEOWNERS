@@ -19,3 +19,5 @@
 /tsconfig.json                    @tsontario
 /.bun-version                     @tsontario
 /bunfig.toml                      @tsontario
+/tasks/                           @tsontario
+/src/tasks/                       @tsontario

@@ -19,7 +19,10 @@ Kinds let verification be specific: a research finding and a production code cha
 
 ## Enforcement
 
-- **In force:** none (advisory).
+- **In force:** none fully, so the law stays advisory.
+  - The taxonomy, its gate bindings, and its path-triggered gates are declared in `tasks/taxonomy.toml`, which is protected core (clause 3).
+  - `src/tasks/taxonomy.ts` validates the file strictly in CI. Any of these fails the build: a duplicated key, an unknown or missing field, an unknown gate or network profile, a bad value, or a path pattern that is not a plain repository-relative glob.
+  - `kindOf()` refuses undeclared kinds. `gatesFor()` adds the gates triggered by a task's changed paths. `writesAllowed()` checks those paths against the kind's `writes`.
 - **Planned:**
-  - The runtime rejects tasks with undeclared kinds.
-  - Gates check that a task's output type matches its kind's declared output.
+  - The runtime refuses to start a task with an undeclared kind (clause 1).
+  - Gates use `gatesFor()` and `writesAllowed()`, resolving `@protected-core` from `.github/CODEOWNERS`, and check that a task's output matches its kind's `produces` (clauses 2 and 4).

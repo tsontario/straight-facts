@@ -1,0 +1,178 @@
+# The task taxonomy (L-0009). Protected core (L-0001). Adding a kind, or changing any
+# gate, network profile, writable path, or path-triggered gate, needs an approver.
+#
+# Every task has exactly one kind. A task's work must match its kind. If it doesn't,
+# the task is re-kinded or split, never pushed through under the wrong kind's gates.
+#
+# This file is TOML because TOML parsers reject duplicate keys, so a repeated key
+# cannot silently replace a gate.
+
+# Gates every kind must pass, in addition to its own.
+required_for_all = ["independent-verifier"]
+
+# Gates a task's output must pass. `enforced` says how, honestly:
+#   ci     - an automated check blocks the merge
+#   review - an approver's review blocks the merge
+#   manual - checked by the independent verifier, not yet automated
+
+[gates.secret-scan]
+law = "L-0038"
+enforced = "ci"
+description = "No secrets or personal data in changes that reach the repository, across its full history."
+
+[gates.entry-secret-scan]
+law = "L-0025"
+enforced = "manual"
+description = "No secrets in a memory entry being promoted."
+
+[gates.checks]
+law = "L-0014"
+enforced = "ci"
+description = "Strict typecheck and the test suite pass."
+
+[gates.independent-verifier]
+law = "L-0020"
+enforced = "manual"
+description = "A separate agent, without the author's context, confirms every acceptance criterion against evidence."
+
+[gates.proof-of-behavior]
+law = "L-0021"
+enforced = "manual"
+description = "Each behavior change carries a test that fails without it and passes with it."
+
+[gates.reproduce-first]
+law = "L-0021"
+enforced = "manual"
+description = "The bug is reproduced as a failing test before it is fixed."
+
+[gates.tests-unchanged]
+law = "L-0021"
+enforced = "manual"
+description = "Existing tests pass unmodified. Changing them makes the task a behavior change."
+
+[gates.supply-chain]
+law = "L-0028"
+enforced = "manual"
+description = "Any added or upgraded dependency is pinned, allowlisted, free of known advisories, and justified. The verifier runs the audit; a CI audit is planned (L-0028). It never runs in the task's sandbox."
+
+[gates.evidence-review]
+law = "L-0003"
+enforced = "manual"
+description = "Every claim in the finding cites evidence the verifier can check."
+
+[gates.exact-inverse]
+law = "L-0010"
+enforced = "manual"
+description = "The change is the exact inverse of earlier changes in the same lane, and nothing more."
+
+[gates.untrusted-refused]
+law = "L-0017"
+enforced = "manual"
+description = "No entry labeled untrusted is promoted."
+
+[gates.approver-review]
+law = "L-0001"
+enforced = "review"
+description = "An approver approves the change before it takes effect."
+
+# The network a task's sandbox may reach (L-0024). Planned enforcement: every sandbox
+# reaches the control plane, which brokers model calls, memory, and messages, and
+# reaches the hosts below only through an egress proxy that allows only the listed
+# methods. `*` means any host.
+
+[network.none]
+hosts = []
+methods = []
+
+[network.package-registries]
+hosts = ["registry.npmjs.org"]
+methods = ["GET", "HEAD"]
+
+[network.web-read-only]
+hosts = ["*"]
+methods = ["GET", "HEAD"]
+
+# Gates that apply to any task whose changes touch the given paths, whatever its kind.
+# `@protected-core` stands for the paths declared in .github/CODEOWNERS (L-0001 §3).
+
+[[path_gates]]
+paths = ["@protected-core"]
+gates = ["approver-review"]
+
+[[path_gates]]
+paths = ["package.json", "bun.lock"]
+gates = ["supply-chain"]
+
+# `writes` lists the repository paths (globs relative to the repository root) that a
+# task of this kind may change. An empty list means the kind changes nothing in the
+# repository.
+
+[kinds.feature]
+produces = "code-change"
+gates = ["secret-scan", "checks", "proof-of-behavior"]
+network = "package-registries"
+writes = ["**"]
+
+[kinds.bugfix]
+produces = "code-change"
+gates = ["secret-scan", "checks", "reproduce-first"]
+network = "package-registries"
+writes = ["**"]
+
+[kinds.refactor]
+produces = "code-change"
+gates = ["secret-scan", "checks", "tests-unchanged"]
+network = "none"
+writes = ["**"]
+
+[kinds.chore]
+produces = "code-change"
+gates = ["secret-scan", "checks", "supply-chain"]
+network = "package-registries"
+writes = ["**"]
+
+[kinds.docs]
+produces = "document"
+gates = ["secret-scan"]
+network = "none"
+writes = ["**/*.md"]
+
+[kinds.research]
+produces = "finding"
+gates = ["secret-scan", "evidence-review"]
+network = "web-read-only"
+writes = ["docs/research/**"]
+
+[kinds.design]
+produces = "decision"
+gates = ["secret-scan"]
+network = "web-read-only"
+writes = ["docs/decisions/**"]
+
+[kinds.revert]
+produces = "revert"
+gates = ["secret-scan", "checks", "exact-inverse"]
+network = "none"
+writes = ["**"]
+
+[kinds.memory-promotion]
+produces = "memory-promotion"
+gates = ["entry-secret-scan", "untrusted-refused"]
+network = "none"
+writes = []
+
+[kinds.governance]
+produces = "amendment"
+gates = ["secret-scan", "approver-review"]
+network = "none"
+writes = [
+  "CONSTITUTION.md",
+  "APPROVERS.md",
+  "laws/**",
+  "amendments/**",
+  "lanes/**",
+  ".github/CODEOWNERS",
+  "tasks/taxonomy.toml",
+  "supply-chain.yml",
+  ".betterleaks.toml",
+]
