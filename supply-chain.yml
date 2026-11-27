@@ -6,6 +6,19 @@
 #     made only of these with OR);
 #   - it has no known advisory at `vulnerability_threshold` severity or higher;
 #   - the change that adds it says why it is needed.
+#
+# Container images (the sandbox and gateway images, decision 0002) follow their own
+# rule. An image must:
+#   - come from its official publisher;
+#   - be pinned by digest;
+#   - be listed in the protected images file;
+#   - be rebuilt from the publisher's latest digest at least once a month;
+#   - carry no known critical vulnerability.
+# The operating-system packages inside an image (bash, coreutils, glibc, and so on) are
+# exempt from the license list below. They are held to the image rule's critical-only
+# bar, not to `vulnerability_threshold`. Every other part of this gate still applies to
+# everything else, including binaries the factory installs (pinned by checksum) and
+# GitHub Actions (pinned by commit SHA).
 
 licenses:
   - MIT
