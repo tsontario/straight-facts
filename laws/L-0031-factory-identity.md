@@ -18,8 +18,8 @@ Humans trust work differently depending on who produced it, and they are entitle
 
 ## Enforcement
 
-- **In force:** none (advisory).
+- **In force:** none fully, so the law stays advisory.
+  - The factory's GitHub identity exists as the GitHub App `straight-facts-factory`. `scripts/as-factory.sh` runs commands under it with a short-lived token.
 - **Planned:**
-  - The factory runs under dedicated bot or app identities.
-  - Sandboxes receive only those identities' credentials ([L-0024](L-0024-sandbox-and-privilege.md)).
+  - Sandboxes receive only factory credentials ([L-0024](L-0024-sandbox-and-privilege.md)).
   - A CI check rejects factory-produced commits whose author is a human.

@@ -8,7 +8,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as described 
 
 | ID | Title | Derives from | Enforcement | Status |
 |---|---|---|---|---|
-| [L-0001](L-0001-protected-core.md) | Protected core changes require human approval | Art. II §3, §5 | advisory | active |
+| [L-0001](L-0001-protected-core.md) | Protected core changes require human approval | Art. II §3, §5 | review | active |
 | [L-0002](L-0002-no-self-exemption.md) | No self-exemption | Art. II §4 | advisory | active |
 | [L-0003](L-0003-report-truthfully.md) | Report truthfully | Art. I §1 | advisory | active |
 | [L-0004](L-0004-approver-roster.md) | Approvals come only from the roster | Art. III §1 | advisory | active |
@@ -45,7 +45,8 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as described 
 | [L-0035](L-0035-suspension.md) | Suspensions are narrow, short, and followed up | Art. IX §6 | advisory | active |
 | [L-0036](L-0036-advisory-gaps.md) | Advisory laws are tracked as gaps | Art. IX §7, Art. V §2 | advisory | active |
 | [L-0037](L-0037-bootstrap-supervision.md) | Supervised until core enforcement is live | Art. III §4, Art. V §2, Art. IX §7 | advisory | active |
-| [L-0038](L-0038-nothing-sensitive-committed.md) | Nothing secret or personal is committed | Art. VII §3, Art. I §1, Art. III §5 | advisory | active |
+| [L-0038](L-0038-nothing-sensitive-committed.md) | Nothing secret or personal is committed | Art. VII §3, Art. I §1, Art. III §5 | ci | active |
+| [L-0039](L-0039-merge-authority.md) | Changes reach main only through approved pull requests | Art. III §3, Art. II §5, Art. IV §4, Art. VI §4, Art. VIII §2 | review, ci | active |
 
 ## Format
 
