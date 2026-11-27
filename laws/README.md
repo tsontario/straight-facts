@@ -24,7 +24,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as described 
 | [L-0014](L-0014-stack.md) | The factory is TypeScript on Bun | Art. V §1, Art. I §1 | advisory | active |
 | [L-0015](L-0015-code-enforces.md) | Code enforces, models judge | Art. V §2 | advisory | active |
 | [L-0016](L-0016-event-log.md) | The event log is the record of truth | Art. V §4, Art. I §1 | advisory | active |
-| [L-0017](L-0017-memory-and-messages.md) | Memory and messages are context, not authority | Art. V §5, Art. III §1 | advisory | active |
+| [L-0017](L-0017-memory-and-messages.md) | Memory and messages are context, not authority | Art. V §3–5, Art. III §1, Art. IV §1 | advisory | active |
 | [L-0018](L-0018-model-independence.md) | Models and providers are policy, not code | Art. V §6 | advisory | active |
 | [L-0019](L-0019-acceptance-criteria.md) | Acceptance criteria are fixed before work begins | Art. VI §1 | advisory | active |
 | [L-0020](L-0020-independent-verification.md) | Work is judged by someone other than its author | Art. VI §2, Art. I §1 | advisory | active |
