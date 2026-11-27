@@ -1,0 +1,7 @@
+# The factory budget (L-0027 §2). Protected core (L-0001); only an approver may change it.
+# Every lane budget must fit within what remains of it (L-0027 §3).
+money_usd: 1500
+tokens: 150000000
+wall_clock_weeks: 12
+window_start: 2026-11-27
+approved_by: "@tsontario"
