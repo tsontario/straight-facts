@@ -32,8 +32,8 @@ Pattern scanning catches the common cases cheaply. Synthetic fixtures (clause 2)
 - **In force:** none fully, so the law stays advisory.
   - The pre-commit hook (`.githooks/pre-commit`) blocks findings, and blocks author or committer emails that are not noreply addresses. It does this only in clones that enable it.
   - The CI workflow (`.github/workflows/secret-scan.yml`) scans the full history on every push and pull request. Its result is reported but not yet required for merging.
+  - GitHub secret scanning with push protection is enabled for the repository. It blocks pushes that contain secret types GitHub recognizes. It does not detect personal data.
 - **Planned:**
-  - Branch protection on `main` requires the `secret-scan` check, which makes this law `ci`.
-  - GitHub secret scanning with push protection is enabled for the repository.
+  - Branch protection on `main` requires the `secret-scan` check, which makes this law `ci`. This arrives with the pull-request workflow.
   - The factory runs the same scan, with the same pinned scanner and configuration, before every commit it makes in any repository.
   - A CI check rejects pushed commits whose author or committer email is not on the allowed list in clause 5.
