@@ -1,0 +1,23 @@
+# The supply-chain gate (L-0028). Protected core (L-0001): only an approver may loosen it.
+#
+# A third-party dependency, including any transitive one, is admitted only if:
+#   - it is pinned to an exact version, with an integrity hash in bun.lock;
+#   - its license is one of `licenses` below (an SPDX identifier, or an expression
+#     made only of these with OR);
+#   - it has no known advisory at `vulnerability_threshold` severity or higher;
+#   - the change that adds it says why it is needed.
+
+licenses:
+  - MIT
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - ISC
+  - 0BSD
+  - BlueOak-1.0.0
+  - CC0-1.0
+  - Unlicense
+  - Zlib
+
+# One of: low, moderate, high, critical (the levels `bun audit` reports).
+vulnerability_threshold: moderate

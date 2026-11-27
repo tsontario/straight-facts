@@ -10,5 +10,6 @@
 /.github/                         @tsontario
 /.githooks/                       @tsontario
 /.betterleaks.toml                @tsontario
+/supply-chain.yml                 @tsontario
 /scripts/install-betterleaks.sh   @tsontario
 /scripts/as-factory.sh            @tsontario

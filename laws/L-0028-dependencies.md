@@ -24,6 +24,6 @@ Protecting the allowlist and threshold stops the factory from lowering the bar t
 
 ## Enforcement
 
-- **In force:** none (advisory).
+- **In force:** none (advisory). The license allowlist and vulnerability threshold are declared in `supply-chain.yml`, which is protected core. Checks against them are done by hand and recorded in the pull request that adds each dependency.
 - **Planned:**
-  - A CI gate checks the lockfile, license, and vulnerabilities on every change to the dependency manifest.
+  - A CI gate checks the lockfile, license, and vulnerabilities on every change to the dependency manifest, against `supply-chain.yml`.
