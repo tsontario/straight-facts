@@ -45,6 +45,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as described 
 | [L-0035](L-0035-suspension.md) | Suspensions are narrow, short, and followed up | Art. IX §6 | advisory | active |
 | [L-0036](L-0036-advisory-gaps.md) | Advisory laws are tracked as gaps | Art. IX §7, Art. V §2 | advisory | active |
 | [L-0037](L-0037-bootstrap-supervision.md) | Supervised until core enforcement is live | Art. III §4, Art. V §2, Art. IX §7 | advisory | active |
+| [L-0038](L-0038-nothing-sensitive-committed.md) | Nothing secret or personal is committed | Art. VII §3, Art. I §1, Art. III §5 | advisory | active |
 
 ## Format
 

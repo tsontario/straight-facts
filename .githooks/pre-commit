@@ -1,0 +1,41 @@
+#!/bin/sh
+# Blocks commits that add secrets or personal data (L-0038).
+# Protected core (L-0001). Enable once per clone:
+#   git config core.hooksPath .githooks
+set -eu
+
+ROOT=$(git rev-parse --show-toplevel)
+PINNED=$(sed -n 's/^VERSION=//p' "$ROOT/scripts/install-betterleaks.sh")
+
+if ! command -v betterleaks >/dev/null 2>&1; then
+	echo "pre-commit: betterleaks is not installed; refusing to commit unscanned changes." >&2
+	echo "Install the pinned version with: scripts/install-betterleaks.sh" >&2
+	exit 1
+fi
+
+if [ "$(betterleaks version)" != "$PINNED" ]; then
+	echo "pre-commit: betterleaks $(betterleaks version) is not the pinned $PINNED." >&2
+	echo "Install the pinned version with: scripts/install-betterleaks.sh" >&2
+	exit 1
+fi
+
+# Commit author and committer emails must be non-personal (L-0038 §5).
+# Factory identity addresses are added here once they exist (L-0031).
+ALLOWED_EMAILS='(@users\.noreply\.github\.com|^noreply@github\.com)$'
+for ident in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+	email=$(git var "$ident" | sed -n 's/.*<\(.*\)>.*/\1/p')
+	if ! printf '%s\n' "$email" | grep -Eq "$ALLOWED_EMAILS"; then
+		echo "pre-commit: the $ident email is not a noreply address (L-0038 §5)." >&2
+		echo "Set one with: git config user.email <id>+<handle>@users.noreply.github.com" >&2
+		exit 1
+	fi
+done
+
+# Inline allow comments and ignore files are not honored; only .betterleaks.toml can suppress.
+EMPTY=$(mktemp -d)
+trap 'rmdir "$EMPTY"' EXIT
+
+betterleaks git --pre-commit --staged --redact --no-banner --log-level warn \
+	--config "$ROOT/.betterleaks.toml" \
+	--ignore-gitleaks-allow --gitleaks-ignore-path "$EMPTY" \
+	"$ROOT"

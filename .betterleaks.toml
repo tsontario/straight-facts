@@ -1,0 +1,42 @@
+# Secret and personal-data scanning for straight-facts (L-0038).
+#
+# Protected core (L-0001). Adding a rule only makes scanning stricter (L-0023).
+# Adding or widening a filter loosens scanning and needs an approver.
+# Only filters in this file can suppress a finding. Inline allow comments and
+# ignore files are not honored (`--ignore-gitleaks-allow`, empty ignore path).
+
+betterleaksMinVersion = "1.10.1"
+
+# Secrets: the built-in rule set of the pinned Betterleaks version.
+[extend]
+useDefault = true
+
+# Personal data. These rules catch the common, machine-recognizable forms.
+# Verifiers check for the rest, such as names and postal addresses (L-0020).
+
+[[rules]]
+id = "personal-email"
+description = "Email address. Use an example.com address or a noreply address instead."
+regex = '''(?i)\b[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b'''
+keywords = ["@"]
+filter = '''
+filter.matchesAny(finding["secret"], [
+  `(?i)@(?:[a-z0-9-]+\.)*example\.(?:com|org|net)$`,
+  `(?i)\.(?:example|invalid|test|localhost)$`,
+  `(?i)@users\.noreply\.github\.com$`,
+  `(?i)^noreply@github\.com$`,
+  `(?i)^git@(?:github\.com|gitlab\.com|bitbucket\.org)$`
+])
+'''
+
+[[rules]]
+id = "personal-phone"
+description = "Phone number in international format. Use a fictional number from a reserved range instead."
+regex = '''(?:^|[^\w+])(\+[1-9](?:[ .-]?\(?[0-9]\)?){7,14})\b'''
+keywords = ["+"]
+
+[[rules]]
+id = "personal-us-ssn"
+description = "US Social Security number."
+regex = '''\b([0-9]{3}-[0-9]{2}-[0-9]{4})\b'''
+keywords = ["-"]
