@@ -21,7 +21,10 @@ Deriving state from the log means a bug in state handling can be fixed and the s
 
 ## Enforcement
 
-- **In force:** none (advisory).
+- **In force:** none fully, so the law stays advisory.
+  - Clause 2 holds at the storage layer (`src/event-log/`), for every connection that leaves the triggers in place and enabled. Triggers refuse every UPDATE and DELETE, and refuse any INSERT that is not the next event chained to the newest one, which also blocks `INSERT OR REPLACE`.
+  - Each event's hash covers its contents and the previous event's hash, so `verify()` catches an edit made with the triggers removed or disabled. It cannot catch an edit if the edited event and every event after it were re-hashed.
 - **Planned:**
-  - The log store exposes no update or delete operation to agents.
-  - A CI test rebuilds state from a recorded log and compares it with the live state.
+  - Every action, decision, message, model call, approval, and outcome is written to the log (clause 1).
+  - The latest hash is anchored outside the log file, so that removing or rewriting the newest events can be detected.
+  - A CI test rebuilds state from a recorded log and compares it with the live state (clause 3).

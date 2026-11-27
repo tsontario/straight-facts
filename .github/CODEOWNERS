@@ -13,3 +13,9 @@
 /supply-chain.yml                 @tsontario
 /scripts/install-betterleaks.sh   @tsontario
 /scripts/as-factory.sh            @tsontario
+/src/event-log/                   @tsontario
+/package.json                     @tsontario
+/bun.lock                         @tsontario
+/tsconfig.json                    @tsontario
+/.bun-version                     @tsontario
+/bunfig.toml                      @tsontario

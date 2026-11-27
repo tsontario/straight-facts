@@ -41,7 +41,7 @@ The protected core never qualifies for unreviewed merging (Art. II §5).
 
 - **In force:**
   - `review`: branch protection on `main` requires one approval, plus code-owner approval for protected-core paths. Pushing a new commit cancels an existing approval, and the latest push must itself be approved. These rules apply to administrators too.
-  - `ci`: the `secret-scan` check must pass, and only a result reported by GitHub Actions counts.
+  - `ci`: the `secret-scan` and `checks` (typecheck and tests) checks must pass, and only results reported by GitHub Actions count.
 - **Planned:**
   - A check that computes the track record in clause 4 from the pull-request history.
   - Restoring the approval requirement automatically when a pull request the factory merged is reverted.

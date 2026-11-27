@@ -1,0 +1,13 @@
+{
+  "name": "straight-facts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.5",
+    "typescript": "7.0.2"
+  }
+}
