@@ -20,5 +20,6 @@ These five laws are the minimum containment. Without them, the factory could cha
 
 ## Enforcement
 
-- **In force:** none (advisory). Agents are expected to request approval for every merge and release.
-- **Planned:** the merge and release paths read the `enforcement` fields of the five laws and require approval while any of them is `advisory`.
+- **In force:** none fully, so the law stays advisory.
+  - In this repository, branch protection requires an approver's approval on every pull request ([L-0039](L-0039-merge-authority.md)).
+- **Planned:** the merge and release paths in every repository read the `enforcement` fields of the five laws, and require approval while any of them is `advisory`.

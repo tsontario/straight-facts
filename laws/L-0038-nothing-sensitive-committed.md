@@ -3,7 +3,7 @@ id: L-0038
 title: Nothing secret or personal is committed
 status: active
 derives_from: ["Art. VII §3", "Art. I §1", "Art. III §5"]
-enforcement: [advisory]
+enforcement: [ci]
 ---
 
 ## Statement
@@ -29,11 +29,10 @@ Pattern scanning catches the common cases cheaply. Synthetic fixtures (clause 2)
 
 ## Enforcement
 
-- **In force:** none fully, so the law stays advisory.
+- **In force:** `ci`.
+  - Branch protection on `main` requires the `secret-scan` check, which scans the full history, for every pull request, administrators included ([L-0039](L-0039-merge-authority.md)).
   - The pre-commit hook (`.githooks/pre-commit`) blocks findings, and blocks author or committer emails that are not noreply addresses. It does this only in clones that enable it.
-  - The CI workflow (`.github/workflows/secret-scan.yml`) scans the full history on every push and pull request. Its result is reported but not yet required for merging.
   - GitHub secret scanning with push protection is enabled for the repository. It blocks pushes that contain secret types GitHub recognizes. It does not detect personal data.
 - **Planned:**
-  - Branch protection on `main` requires the `secret-scan` check, which makes this law `ci`. This arrives with the pull-request workflow.
   - The factory runs the same scan, with the same pinned scanner and configuration, before every commit it makes in any repository.
   - A CI check rejects pushed commits whose author or committer email is not on the allowed list in clause 5.

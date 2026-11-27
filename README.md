@@ -12,3 +12,12 @@ git config core.hooksPath .githooks
 ```
 
 CI runs the same scan over the full history on every push and pull request.
+
+## How changes land
+
+Every change reaches `main` through a pull request that passes `secret-scan` and is approved by an approver ([L-0039](laws/L-0039-merge-authority.md)). Changes to the protected core, listed in [`.github/CODEOWNERS`](.github/CODEOWNERS), always need that approval. Agents open and merge pull requests as the factory's GitHub App, never as a person:
+
+```sh
+scripts/as-factory.sh git push -u origin my-branch
+scripts/as-factory.sh gh pr create --fill
+```

@@ -1,0 +1,13 @@
+# The protected core (L-0001). This file is its single machine-readable declaration (L-0001 §3).
+# Any pull request that touches a path listed here needs an approver's review before it merges (L-0039).
+# Owners are the approvers listed in APPROVERS.md (L-0004).
+
+/CONSTITUTION.md                  @tsontario
+/APPROVERS.md                     @tsontario
+/laws/                            @tsontario
+/amendments/                      @tsontario
+/.github/                         @tsontario
+/.githooks/                       @tsontario
+/.betterleaks.toml                @tsontario
+/scripts/install-betterleaks.sh   @tsontario
+/scripts/as-factory.sh            @tsontario

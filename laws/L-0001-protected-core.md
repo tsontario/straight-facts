@@ -3,7 +3,7 @@ id: L-0001
 title: Protected core changes require human approval
 status: active
 derives_from: ["Art. II §3", "Art. II §5"]
-enforcement: [advisory]
+enforcement: [review]
 ---
 
 ## Statement
@@ -36,8 +36,10 @@ Clause 5 makes clause 4 a fact rather than a promise: an agent that cannot appro
 
 ## Enforcement
 
-- **In force:** none (advisory).
+- **In force:** `review`.
+  - Branch protection on `main` requires code-owner review for every path in `.github/CODEOWNERS`, the declaration clause 3 requires, and it applies to administrators too ([L-0039](L-0039-merge-authority.md)).
+  - The factory's GitHub identity can neither approve a protected-core change nor merge one that lacks that review.
+  - Limit: clause 5 does not yet hold on the approver's own machine, where the approver's GitHub login is still available to the agent.
 - **Planned:**
-  - Branch protection that requires human code-owner review on protected paths.
   - A runtime guard that refuses writes to protected paths unless they are part of a proposal.
-  - Agent credentials scoped so they cannot approve or merge on protected paths.
+  - Agents run only where no approver credentials are present ([L-0024](L-0024-sandbox-and-privilege.md)).
