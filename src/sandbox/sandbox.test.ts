@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,12 +60,11 @@ describe("sandboxRunArgs", () => {
 
 	test("refuses to run a sandbox as root", () => {
 		const good: SandboxSpec = { taskId: "t-1", laneId: "lane-0001", repo: "a/b", workspace: "/tmp/w", command: ["true"] };
-		const getuid = process.getuid;
-		process.getuid = () => 0;
+		const getuid = spyOn(process, "getuid").mockReturnValue(0);
 		try {
 			expect(() => sandboxRunArgs("img", good)).toThrow(SandboxError);
 		} finally {
-			process.getuid = getuid;
+			getuid.mockRestore();
 		}
 	});
 });
