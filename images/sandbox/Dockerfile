@@ -42,6 +42,12 @@ RUN sed -i \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=omp --chmod=0755 /omp /usr/local/bin/omp
+# omp extracts a native addon from its own binary at startup and loads it with dlopen. At
+# runtime HOME is on a noexec tmpfs, so the addon is extracted here instead, next to the
+# binary, which is the next place omp looks for it.
+RUN HOME=/tmp/omp-natives omp --help >/dev/null \
+ && cp /tmp/omp-natives/.omp/natives/*/*/pi_natives.linux-*.node /usr/local/bin/ \
+ && rm -rf /tmp/omp-natives
 
 USER bun
 WORKDIR /workspace

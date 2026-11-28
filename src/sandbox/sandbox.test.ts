@@ -205,9 +205,12 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 		}
 	}, 30_000);
 
-	test("contains the pinned omp release", async () => {
-		const out = await runIn(["omp", "--version"]);
+	test("contains the pinned omp release, which runs under the sandbox's restrictions", async () => {
+		const version = await runIn(["omp", "--version"]);
 		const { build } = await loadSandboxImages();
-		expect(out).toContain(build.ompVersion);
-	}, 30_000);
+		expect(version).toContain(build.ompVersion);
+		// `--help` loads omp's native addon, which a read-only root and a noexec /tmp would break.
+		const help = await runIn(["sh", "-c", "omp --help >/dev/null && echo ran"]);
+		expect(help).toBe("ran");
+	}, 60_000);
 });
