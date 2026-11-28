@@ -28,4 +28,6 @@ test("refuses build inputs that are not pinned", async () => {
 	await expect(loadVariant(["arm64 = ", "arm = "])).rejects.toThrow(ImageError);
 	// A registry outside ghcr.io.
 	await expect(loadVariant(['repository = "ghcr.io/', 'repository = "docker.io/'])).rejects.toThrow(ImageError);
+	// A scanner image by tag alone.
+	await expect(loadVariant(["trivy:0.76.2@sha256:", "trivy:0.76.2-"])).rejects.toThrow(ImageError);
 });

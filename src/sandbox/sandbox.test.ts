@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSandboxImage, loadSandboxImages } from "./image";
@@ -21,37 +21,53 @@ function spec(command: string[]): SandboxSpec {
 	return { taskId: `test-${process.pid}-${counter}`, laneId: "lane-0001", repo: "tsontario/straight-facts", workspace, command };
 }
 
-async function runIn(command: string[], env?: Record<string, string>): Promise<{ code: number; stdout: string }> {
+/** Runs a command in a fresh sandbox, with `env` added to the control plane's environment meanwhile. */
+async function runIn(command: string[], env: Record<string, string> = {}): Promise<string> {
 	const saved = { ...process.env };
 	Object.assign(process.env, env);
 	try {
 		const proc = startSandbox(image, spec(command));
 		proc.stdin.end();
-		const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-		return { code, stdout: stdout.trim() };
+		const [stdout] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+		return stdout.trim();
 	} finally {
-		for (const key of Object.keys(env ?? {})) {
+		for (const key of Object.keys(env)) {
 			if (key in saved) process.env[key] = saved[key];
 			else delete process.env[key];
 		}
 	}
 }
 
+function bytes(size: string): number {
+	const units: Record<string, number> = { k: 1024, m: 1024 ** 2, g: 1024 ** 3 };
+	return Number.parseInt(size, 10) * (units[size.slice(-1)] ?? 1);
+}
+
 describe("sandboxRunArgs", () => {
-	test("refuses specs that could escape their mount or label", () => {
+	test("refuses specs and limits that could add docker flags, mounts or labels", () => {
 		const good: SandboxSpec = { taskId: "t-1", laneId: "lane-0001", repo: "a/b", workspace: "/tmp/w", command: ["true"] };
+		expect(() => sandboxRunArgs("--privileged", good)).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, workspace: "relative/w" })).toThrow(SandboxError);
+		expect(() => sandboxRunArgs("img", { ...good, workspace: "/tmp/w/../../etc" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, workspace: "/tmp/w,target=/etc" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, taskId: "T 1" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, repo: "a/b/c" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, command: [] })).toThrow(SandboxError);
+		expect(() => sandboxRunArgs("img", good, { ...DEFAULT_LIMITS, tmpfsSize: "1g,exec,suid" })).toThrow(SandboxError);
+		expect(() => sandboxRunArgs("img", good, { ...DEFAULT_LIMITS, memory: "4g --privileged" })).toThrow(SandboxError);
+		expect(() => sandboxRunArgs("img", good, { ...DEFAULT_LIMITS, cpus: Number.POSITIVE_INFINITY })).toThrow(SandboxError);
 	});
 });
 
 describe.skipIf(!dockerAvailable)("a running sandbox", () => {
+	let dockerHost: string;
+
 	beforeAll(async () => {
 		image = await buildSandboxImage();
 		workspace = mkdtempSync(join(tmpdir(), "sf-ws-"));
+		dockerHost =
+			process.env.DOCKER_HOST ??
+			Bun.spawnSync(["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]).stdout.toString().trim();
 	}, 600_000);
 
 	afterAll(() => {
@@ -59,69 +75,109 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 	});
 
 	test("cannot reach the network or resolve names", async () => {
-		const result = await runIn([
+		const out = await runIn([
 			"sh",
 			"-c",
 			"getent hosts example.com >/dev/null && echo resolved; bun -e \"try { await fetch('http://1.1.1.1', { signal: AbortSignal.timeout(3000) }); console.log('reached') } catch { console.log('blocked') }\"",
 		]);
-		expect(result.stdout).toBe("blocked");
+		expect(out).toBe("blocked");
 	}, 30_000);
 
-	test("has a read-only root; only /tmp and the workspace are writable", async () => {
+	test("cannot write its root filesystem; /tmp and the workspace stay writable", async () => {
 		// /home/bun belongs to the sandbox user, so only the read-only root stops writes there.
-		const result = await runIn([
+		const out = await runIn([
 			"sh",
 			"-c",
 			"touch /home/bun/x 2>/dev/null && echo home; touch /usr/local/x 2>/dev/null && echo usr; touch /tmp/x && echo tmp; touch /workspace/written && echo workspace",
 		]);
-		expect(result.stdout.split("\n")).toEqual(["tmp", "workspace"]);
+		expect(out.split("\n")).toEqual(["tmp", "workspace"]);
 		expect(existsSync(join(workspace, "written"))).toBe(true);
 	}, 30_000);
 
 	test("runs as an unprivileged user with no capabilities and no privilege escalation", async () => {
-		const result = await runIn(["sh", "-c", "id -u; grep -E '^(CapEff|CapPrm|CapBnd|NoNewPrivs):' /proc/self/status"]);
-		const [uid, ...status] = result.stdout.split("\n");
+		const out = await runIn(["sh", "-c", "id -u; grep -E '^(CapEff|CapPrm|CapBnd|NoNewPrivs|Seccomp):' /proc/self/status"]);
+		const [uid, ...status] = out.split("\n");
 		expect(uid).toBe("1000");
 		// An empty bounding set means not even a setuid binary could regain a capability.
+		// Seccomp 2 is filter mode: Docker's default syscall filter is in force.
 		expect(status.map(line => line.replace(/\s+/g, " "))).toEqual([
 			"CapPrm: 0000000000000000",
 			"CapEff: 0000000000000000",
 			"CapBnd: 0000000000000000",
 			"NoNewPrivs: 1",
+			"Seccomp: 2",
 		]);
 	}, 30_000);
 
-	test("is held to its memory, CPU and process limits", async () => {
-		const result = await runIn(["cat", "/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/cpu.max", "/sys/fs/cgroup/pids.max"]);
+	test("is confined by AppArmor wherever the host kernel has it", async () => {
+		const out = await runIn(["sh", "-c", "cat /sys/module/apparmor/parameters/enabled 2>/dev/null || echo N; cat /proc/self/attr/current 2>/dev/null"]);
+		const [enabled, profile] = out.split("\n");
+		if (enabled === "Y") expect(profile).toStartWith("docker-default");
+	}, 30_000);
+
+	test("sees only its own processes and IPC", async () => {
+		const out = await runIn(["sh", "-c", "tr '\\0' ' ' < /proc/1/cmdline; echo; df -k /dev/shm | tail -1 | awk '{print $2}'"]);
+		const [pid1, shmKiB] = out.split("\n");
+		// PID 1 is the sandbox's own command: no host processes are visible.
+		expect(pid1).toStartWith("sh -c tr");
+		// A private 64 MiB /dev/shm, not the host's.
+		expect(shmKiB).toBe("65536");
+	}, 30_000);
+
+	test("is held to its memory, swap, CPU and process limits", async () => {
+		const cgroup = "/sys/fs/cgroup";
+		const out = await runIn(["cat", `${cgroup}/memory.max`, `${cgroup}/memory.swap.max`, `${cgroup}/cpu.max`, `${cgroup}/pids.max`]);
 		const cpuPeriod = 100_000;
-		expect(result.stdout.split("\n")).toEqual([
-			String(4 * 1024 ** 3),
+		expect(out.split("\n")).toEqual([
+			String(bytes(DEFAULT_LIMITS.memory)),
+			"0",
 			`${DEFAULT_LIMITS.cpus * cpuPeriod} ${cpuPeriod}`,
 			String(DEFAULT_LIMITS.pids),
 		]);
 	}, 30_000);
 
 	test("mounts nothing from the host except the workspace", async () => {
-		const result = await runIn(["cat", "/proc/self/mountinfo"]);
-		const mountPoints = result.stdout.split("\n").map(line => line.split(" ")[4] ?? "");
-		// Docker always provides these three files; everything else is kernel filesystems.
+		const out = await runIn(["cat", "/proc/self/mountinfo"]);
+		const mounts = out.split("\n").map(line => {
+			const fields = line.split(" ");
+			return { point: fields[4] ?? "", type: fields[fields.indexOf("-") + 1] ?? "" };
+		});
+		// Docker always provides these three files.
 		const allowed = new Set(["/", "/tmp", "/workspace", "/etc/hosts", "/etc/hostname", "/etc/resolv.conf"]);
-		const unexpected = mountPoints.filter(point => !allowed.has(point) && !/^\/(proc|dev|sys)(\/|$)/.test(point));
+		// Under /proc, /dev and /sys only kernel and memory filesystems may appear, never a host directory.
+		const kernelTypes = new Set(["proc", "sysfs", "tmpfs", "devpts", "mqueue", "cgroup2"]);
+		const unexpected = mounts.filter(
+			({ point, type }) => !allowed.has(point) && !(/^\/(proc|dev|sys)(\/|$)/.test(point) && kernelTypes.has(type)),
+		);
 		expect(unexpected).toEqual([]);
-		expect(mountPoints).toContain("/workspace");
+		expect(mounts.map(mount => mount.point)).toContain("/workspace");
 	}, 30_000);
 
-	test("receives none of the control plane's environment", async () => {
+	test("receives none of the control plane's environment or the docker client's proxy settings", async () => {
 		const secret = `sk-ant-fake-${process.pid}`;
-		const result = await runIn(["env"], { ANTHROPIC_API_KEY: secret, GH_TOKEN: secret, AWS_SECRET_ACCESS_KEY: secret });
-		const keys = result.stdout.split("\n").map(line => line.split("=")[0]).sort();
-		expect(result.stdout).not.toContain(secret);
-		expect(keys).toEqual(["BUN_INSTALL_BIN", "BUN_RUNTIME_TRANSPILER_CACHE_PATH", "HOME", "HOSTNAME", "PATH", "PWD"]);
+		// The docker client copies `proxies` from its config into containers unless the runner stops it.
+		const dockerConfig = mkdtempSync(join(tmpdir(), "sf-docker-config-"));
+		const proxy = `http://user:${secret}@proxy.invalid:3128`;
+		writeFileSync(join(dockerConfig, "config.json"), JSON.stringify({ proxies: { default: { httpProxy: proxy, httpsProxy: proxy, noProxy: secret } } }));
+		try {
+			const out = await runIn(["env"], {
+				ANTHROPIC_API_KEY: secret,
+				GH_TOKEN: secret,
+				HTTPS_PROXY: proxy,
+				DOCKER_CONFIG: dockerConfig,
+				DOCKER_HOST: dockerHost,
+			});
+			const keys = out.split("\n").map(line => line.split("=")[0]).sort();
+			expect(out).not.toContain(secret);
+			expect(keys).toEqual(["BUN_INSTALL_BIN", "BUN_RUNTIME_TRANSPILER_CACHE_PATH", "HOME", "HOSTNAME", "PATH", "PWD"]);
+		} finally {
+			rmSync(dockerConfig, { recursive: true, force: true });
+		}
 	}, 30_000);
 
 	test("contains the pinned omp release", async () => {
-		const result = await runIn(["omp", "--version"]);
+		const out = await runIn(["omp", "--version"]);
 		const { build } = await loadSandboxImages();
-		expect(result.stdout).toContain(build.ompVersion);
+		expect(out).toContain(build.ompVersion);
 	}, 30_000);
 });

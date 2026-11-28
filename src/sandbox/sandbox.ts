@@ -1,4 +1,4 @@
-import { isAbsolute } from "node:path";
+import { isAbsolute, normalize } from "node:path";
 
 /**
  * Runs one task in its own sandbox container (L-0024, decision 0002 §1).
@@ -6,7 +6,8 @@ import { isAbsolute } from "node:path";
  * The container gets no network, a read-only root filesystem with a tmpfs at
  * `/tmp`, a non-root user, no capabilities, no privilege escalation, resource
  * limits, and exactly one host path: the task's workspace. No host environment
- * reaches it; only `HOME` is set. The labels let a halt find and kill it.
+ * reaches it, including the proxy settings the docker client would copy in from
+ * its own config; only `HOME` is set. The labels let a halt find and kill it.
  *
  * Network: step 1 of decision 0002 uses `--network none`. Step 2 replaces it
  * with the task's internal network and gateway.
@@ -44,6 +45,14 @@ export const LABELS = {
 const USER = "1000:1000";
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+/** An image reference; it cannot start with `-`, so it can't be read as a flag. */
+const IMAGE = /^[a-z0-9][a-z0-9._\/:@-]*$/;
+const SIZE = /^[1-9]\d*[kmg]?$/;
+/**
+ * The docker client copies `proxies` from its config file into a container's
+ * environment. Naming each variable bare, with no value, overrides that.
+ */
+const PROXY_VARIABLES = ["HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "NO_PROXY", "ALL_PROXY"].flatMap(name => [name, name.toLowerCase()]);
 
 export class SandboxError extends Error {
 	override readonly name = "SandboxError";
@@ -51,13 +60,18 @@ export class SandboxError extends Error {
 
 /** The `docker run` arguments for a sandbox. Validates the spec first. */
 export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: SandboxLimits = DEFAULT_LIMITS): string[] {
+	if (!IMAGE.test(image)) throw new SandboxError(`invalid image reference: ${JSON.stringify(image)}`);
 	if (!ID.test(spec.taskId)) throw new SandboxError(`invalid task id: ${JSON.stringify(spec.taskId)}`);
 	if (!ID.test(spec.laneId)) throw new SandboxError(`invalid lane id: ${JSON.stringify(spec.laneId)}`);
 	if (!REPO.test(spec.repo)) throw new SandboxError(`invalid repository: ${JSON.stringify(spec.repo)}`);
-	if (!isAbsolute(spec.workspace) || /[,\n]/.test(spec.workspace)) {
-		throw new SandboxError(`workspace must be an absolute path without commas or newlines: ${JSON.stringify(spec.workspace)}`);
+	if (!isAbsolute(spec.workspace) || normalize(spec.workspace) !== spec.workspace || /[,\n]/.test(spec.workspace)) {
+		throw new SandboxError(`workspace must be a normalized absolute path without commas or newlines: ${JSON.stringify(spec.workspace)}`);
 	}
 	if (spec.command.length === 0) throw new SandboxError("command must not be empty");
+	if (!SIZE.test(limits.memory) || !SIZE.test(limits.tmpfsSize)) throw new SandboxError("memory and tmpfs limits must be sizes such as 4g");
+	if (!Number.isInteger(limits.pids) || limits.pids < 1 || !Number.isFinite(limits.cpus) || limits.cpus <= 0) {
+		throw new SandboxError("pids and cpus limits must be positive");
+	}
 	return [
 		"run",
 		"--rm",
@@ -79,10 +93,16 @@ export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: Sandbox
 		String(limits.pids),
 		"--memory",
 		limits.memory,
+		// Equal to --memory, so the task gets no swap on top of its memory limit.
+		"--memory-swap",
+		limits.memory,
 		"--cpus",
 		String(limits.cpus),
+		"--ipc",
+		"private",
 		"--env",
 		"HOME=/tmp",
+		...PROXY_VARIABLES.flatMap(name => ["--env", name]),
 		"--mount",
 		`type=bind,source=${spec.workspace},target=/workspace`,
 		"--workdir",

@@ -20,13 +20,16 @@ FROM ${BASE_IMAGE}
 ARG DEBIAN_SNAPSHOT
 ARG GIT_VERSION
 USER root
-# Every Debian package comes from snapshot.debian.org at the pinned time; the build fails
-# if any source still points at the live mirror.
+# Every Debian package comes from snapshot.debian.org at the pinned time. The build fails
+# if any apt source, in any file, points anywhere else.
 RUN sed -i \
       -e "s#http://deb.debian.org/debian-security#https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}#" \
       -e "s#http://deb.debian.org/debian#https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}#" \
       /etc/apt/sources.list.d/debian.sources \
- && ! grep -rq 'deb.debian.org' /etc/apt/sources.list.d/ \
+ && if cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null | grep -v '^[[:space:]]*#' \
+      | grep -oE '[a-z+]+://[^[:space:]]+' | grep -v "^https://snapshot\.debian\.org/archive/[a-z-]*/${DEBIAN_SNAPSHOT}\$"; then \
+      echo "apt source outside the pinned snapshot" >&2; exit 1; \
+    fi \
  && apt-get -o Acquire::Check-Valid-Until=false update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "git=${GIT_VERSION}" \
  && rm -rf /var/lib/apt/lists/*

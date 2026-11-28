@@ -15,7 +15,7 @@ repository = "ghcr.io/tsontario/straight-facts-sandbox"
 base = "oven/bun:1.4.5-debian@sha256:3dddea58e1f8f2240eca906b023fedb944f9a8352515a35309fd0c879fe00aaa"
 # The snapshot.debian.org timestamp every Debian package is installed from.
 debian_snapshot = "20261127T000000Z"
-# git, the only package added to the base.
+# git, added to the base with the dependencies Debian requires for it.
 git = "1:2.47.3-0+deb13u1"
 # The omp release whose Linux binary runs each agent session (L-0013 pins omp).
 omp_version = "19.2.1"
@@ -24,3 +24,9 @@ omp_version = "19.2.1"
 # SHA-256 of the release assets omp-linux-x64 and omp-linux-arm64.
 amd64 = "e8b937f9bf023baa147bdd300ad5421af0a6ef8b1f350c47a9a93d5fca94feca"
 arm64 = "92d4cce4b14814f6b838aa86dcec6359f0cb089cbcc300e8463cbb5326991fe0"
+
+[tools]
+# The scanner the publishing workflow runs on each image before pushing it (decision 0002
+# §6): Trivy v0.76.2, Apache-2.0, the official multi-arch image. Its default severity
+# source decides what counts as critical.
+trivy = "aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb"
