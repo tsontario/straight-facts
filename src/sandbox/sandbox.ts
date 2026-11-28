@@ -4,8 +4,10 @@ import { isAbsolute, normalize } from "node:path";
  * Runs one task in its own sandbox container (L-0024, decision 0002 §1).
  *
  * The container gets no network, a read-only root filesystem with a tmpfs at
- * `/tmp`, a non-root user, no capabilities, no privilege escalation, resource
- * limits, and exactly one host path: the task's workspace. No host environment
+ * `/tmp`, the control plane's own non-root uid and gid (so it can write the
+ * workspace the control plane owns, and nothing else of the host's), no
+ * capabilities, no privilege escalation, resource limits, and exactly one host
+ * path: the task's workspace. No host environment
  * reaches it, including the proxy settings the docker client would copy in from
  * its own config; only `HOME` is set. The labels let a halt find and kill it.
  *
@@ -41,8 +43,6 @@ export const LABELS = {
 	repo: "straight-facts.repo",
 } as const;
 
-/** The uid:gid of the image's unprivileged `bun` user. */
-const USER = "1000:1000";
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 /** An image reference; it cannot start with `-`, so it can't be read as a flag. */
@@ -84,7 +84,7 @@ export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: Sandbox
 		"--tmpfs",
 		`/tmp:rw,nosuid,nodev,size=${limits.tmpfsSize}`,
 		"--user",
-		USER,
+		sandboxUser(),
 		"--cap-drop",
 		"ALL",
 		"--security-opt",
@@ -120,6 +120,15 @@ export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: Sandbox
 		image,
 		...spec.command,
 	];
+}
+
+/** The control plane's uid:gid, which the sandbox runs as. Refuses root. */
+function sandboxUser(): string {
+	const uid = process.getuid?.();
+	const gid = process.getgid?.();
+	if (uid === undefined || gid === undefined) throw new SandboxError("cannot determine the control plane's uid and gid");
+	if (uid === 0 || gid === 0) throw new SandboxError("the control plane must not run as root: the sandbox runs as its uid and gid");
+	return `${uid}:${gid}`;
 }
 
 /**

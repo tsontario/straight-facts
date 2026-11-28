@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSandboxImage, loadSandboxImages } from "./image";
@@ -57,6 +57,17 @@ describe("sandboxRunArgs", () => {
 		expect(() => sandboxRunArgs("img", good, { ...DEFAULT_LIMITS, memory: "4g --privileged" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", good, { ...DEFAULT_LIMITS, cpus: Number.POSITIVE_INFINITY })).toThrow(SandboxError);
 	});
+
+	test("refuses to run a sandbox as root", () => {
+		const good: SandboxSpec = { taskId: "t-1", laneId: "lane-0001", repo: "a/b", workspace: "/tmp/w", command: ["true"] };
+		const getuid = process.getuid;
+		process.getuid = () => 0;
+		try {
+			expect(() => sandboxRunArgs("img", good)).toThrow(SandboxError);
+		} finally {
+			process.getuid = getuid;
+		}
+	});
 });
 
 describe.skipIf(!dockerAvailable)("a running sandbox", () => {
@@ -84,20 +95,22 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 	}, 30_000);
 
 	test("cannot write its root filesystem; /tmp and the workspace stay writable", async () => {
-		// /home/bun belongs to the sandbox user, so only the read-only root stops writes there.
+		// /var/tmp is world-writable on the root filesystem, so only the read-only root stops writes there.
 		const out = await runIn([
 			"sh",
 			"-c",
-			"touch /home/bun/x 2>/dev/null && echo home; touch /usr/local/x 2>/dev/null && echo usr; touch /tmp/x && echo tmp; touch /workspace/written && echo workspace",
+			"touch /var/tmp/x 2>/dev/null && echo var-tmp; touch /usr/local/x 2>/dev/null && echo usr; touch /tmp/x && echo tmp; touch /workspace/written && echo workspace",
 		]);
 		expect(out.split("\n")).toEqual(["tmp", "workspace"]);
-		expect(existsSync(join(workspace, "written"))).toBe(true);
+		// Files the task writes belong to the control plane's own user.
+		expect(statSync(join(workspace, "written")).uid).toBe(process.getuid?.() ?? -1);
 	}, 30_000);
 
-	test("runs as an unprivileged user with no capabilities and no privilege escalation", async () => {
+	test("runs as the control plane's non-root user with no capabilities and no privilege escalation", async () => {
 		const out = await runIn(["sh", "-c", "id -u; grep -E '^(CapEff|CapPrm|CapBnd|NoNewPrivs|Seccomp):' /proc/self/status"]);
 		const [uid, ...status] = out.split("\n");
-		expect(uid).toBe("1000");
+		expect(uid).toBe(String(process.getuid?.()));
+		expect(uid).not.toBe("0");
 		// An empty bounding set means not even a setuid binary could regain a capability.
 		// Seccomp 2 is filter mode: Docker's default syscall filter is in force.
 		expect(status.map(line => line.replace(/\s+/g, " "))).toEqual([
