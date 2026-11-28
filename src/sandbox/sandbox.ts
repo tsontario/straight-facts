@@ -1,18 +1,18 @@
 import { isAbsolute, normalize } from "node:path";
+import { GATEWAY_HOST, PROXY_PORT } from "../gateway/endpoints";
 
 /**
  * Runs one task in its own sandbox container (L-0024, decision 0002 §1).
  *
- * The container gets no network, a read-only root filesystem with a tmpfs at
- * `/tmp`, the control plane's own non-root uid and gid (so it can write the
- * workspace the control plane owns, and nothing else of the host's), no
- * capabilities, no privilege escalation, resource limits, and exactly one host
- * path: the task's workspace. No host environment
+ * The container gets a read-only root filesystem with a tmpfs at `/tmp`, the
+ * control plane's own non-root uid and gid (so it can write the workspace the
+ * control plane owns, and nothing else of the host's), no capabilities, no
+ * privilege escalation, resource limits, and exactly one host path: the task's
+ * workspace. Its only network is the task's internal network (see network.ts),
+ * where the one thing it can reach is the task's gateway. No host environment
  * reaches it, including the proxy settings the docker client would copy in from
- * its own config; only `HOME` is set. The labels let a halt find and kill it.
- *
- * Network: step 1 of decision 0002 uses `--network none`. Step 2 replaces it
- * with the task's internal network and gateway.
+ * its own config; it gets only `HOME` and the gateway's proxy settings. The
+ * labels let a halt find and kill it.
  */
 
 export interface SandboxSpec {
@@ -20,6 +20,8 @@ export interface SandboxSpec {
 	readonly laneId: string;
 	/** The repository the task works on, as `owner/name`. */
 	readonly repo: string;
+	/** The task's internal network, from `startTaskNetwork`. */
+	readonly network: string;
 	/** Absolute host path of the task's workspace: the only host path mounted. */
 	readonly workspace: string;
 	/** The command to run inside the sandbox. */
@@ -45,14 +47,37 @@ export const LABELS = {
 
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const TASK_NETWORK = /^sf-task-[a-z0-9][a-z0-9-]{0,62}$/;
 /** An image reference; it cannot start with `-`, so it can't be read as a flag. */
-const IMAGE = /^[a-z0-9][a-z0-9._\/:@-]*$/;
+export const IMAGE = /^[a-z0-9][a-z0-9._\/:@-]*$/;
 const SIZE = /^[1-9]\d*[kmg]?$/;
+const PROXY = `http://${GATEWAY_HOST}:${PROXY_PORT}`;
 /**
  * The docker client copies `proxies` from its config file into a container's
- * environment. Naming each variable bare, with no value, overrides that.
+ * environment. Setting each variable, or naming it bare with no value, overrides that.
  */
 const PROXY_VARIABLES = ["HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "NO_PROXY", "ALL_PROXY"].flatMap(name => [name, name.toLowerCase()]);
+
+/** `--env` arguments that leave every proxy variable unset, whatever the docker client's config says. */
+export function clearedProxyEnv(): string[] {
+	return PROXY_VARIABLES.flatMap(name => ["--env", name]);
+}
+
+/** `--env` arguments that send a sandbox's HTTP and HTTPS through its gateway, and reach the gateway's own endpoints directly. */
+function gatewayProxyEnv(): string[] {
+	const values: Record<string, string> = { HTTP_PROXY: PROXY, HTTPS_PROXY: PROXY, NO_PROXY: GATEWAY_HOST };
+	return PROXY_VARIABLES.flatMap(name => {
+		const value = values[name.toUpperCase()];
+		return ["--env", value === undefined ? name : `${name}=${value}`];
+	});
+}
+
+/** Validates the ids a task's containers and networks are named and labelled with. */
+export function validateTask(task: { readonly taskId: string; readonly laneId: string; readonly repo: string }): void {
+	if (!ID.test(task.taskId)) throw new SandboxError(`invalid task id: ${JSON.stringify(task.taskId)}`);
+	if (!ID.test(task.laneId)) throw new SandboxError(`invalid lane id: ${JSON.stringify(task.laneId)}`);
+	if (!REPO.test(task.repo)) throw new SandboxError(`invalid repository: ${JSON.stringify(task.repo)}`);
+}
 
 export class SandboxError extends Error {
 	override readonly name = "SandboxError";
@@ -61,9 +86,8 @@ export class SandboxError extends Error {
 /** The `docker run` arguments for a sandbox. Validates the spec first. */
 export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: SandboxLimits = DEFAULT_LIMITS): string[] {
 	if (!IMAGE.test(image)) throw new SandboxError(`invalid image reference: ${JSON.stringify(image)}`);
-	if (!ID.test(spec.taskId)) throw new SandboxError(`invalid task id: ${JSON.stringify(spec.taskId)}`);
-	if (!ID.test(spec.laneId)) throw new SandboxError(`invalid lane id: ${JSON.stringify(spec.laneId)}`);
-	if (!REPO.test(spec.repo)) throw new SandboxError(`invalid repository: ${JSON.stringify(spec.repo)}`);
+	validateTask(spec);
+	if (!TASK_NETWORK.test(spec.network)) throw new SandboxError(`invalid task network: ${JSON.stringify(spec.network)}`);
 	if (!isAbsolute(spec.workspace) || normalize(spec.workspace) !== spec.workspace || /[,\n]/.test(spec.workspace)) {
 		throw new SandboxError(`workspace must be a normalized absolute path without commas or newlines: ${JSON.stringify(spec.workspace)}`);
 	}
@@ -77,9 +101,13 @@ export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: Sandbox
 		"--rm",
 		"--interactive",
 		"--name",
-		`sf-${spec.taskId}`,
-		"--network",
+		`sf-sandbox-${spec.taskId}`,
+		// Its stdout is the RPC channel the control plane reads by attaching; nothing is stored,
+		// so a session cannot fill the Docker host's disk through its log.
+		"--log-driver",
 		"none",
+		"--network",
+		spec.network,
 		"--read-only",
 		"--tmpfs",
 		`/tmp:rw,nosuid,nodev,size=${limits.tmpfsSize}`,
@@ -104,7 +132,7 @@ export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: Sandbox
 		"64m",
 		"--env",
 		"HOME=/tmp",
-		...PROXY_VARIABLES.flatMap(name => ["--env", name]),
+		...gatewayProxyEnv(),
 		"--mount",
 		`type=bind,source=${spec.workspace},target=/workspace`,
 		"--workdir",
@@ -147,7 +175,7 @@ export function startSandbox(image: string, spec: SandboxSpec, limits: SandboxLi
 }
 
 /** The environment the docker client needs to reach the engine, and nothing else. */
-function dockerClientEnv(): Record<string, string> {
+export function dockerClientEnv(): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const key of ["PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"]) {
 		const value = process.env[key];

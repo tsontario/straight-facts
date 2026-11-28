@@ -1,5 +1,5 @@
 # The sandbox image (decision 0002 §1). Protected core (L-0001).
-# Built only by src/sandbox/image.ts, which passes the pins from images/images.toml.
+# Built only by src/images/images.ts, which passes the pins from images/images.toml.
 ARG BASE_IMAGE
 ARG TARGETARCH
 

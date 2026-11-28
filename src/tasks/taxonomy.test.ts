@@ -26,6 +26,7 @@ description = "approver"
 [network.none]
 hosts = []
 methods = []
+read_only = []
 
 [[path_gates]]
 paths = ["@protected-core"]
@@ -198,6 +199,17 @@ describe("parseTaxonomy", () => {
 		expect(problemsOf(MINIMAL.replace("hosts = []\nmethods = []", `hosts = ["${long}"]\nmethods = ["GET"]`))).toContain(
 			`network.none.hosts: "${long}" is longer than 253 characters`,
 		);
+	});
+
+	test("keeps token-write hosts off HTTPS, and read_only to hosts the gateway has endpoints for", () => {
+		const problems = problemsOf(
+			MINIMAL.replace("hosts = []\nmethods = []\nread_only = []", 'hosts = ["registry.npmjs.org"]\nmethods = ["GET"]\nread_only = ["gitlab.com"]'),
+		);
+		expect(problems).toEqual([
+			'network.none.hosts: "registry.npmjs.org" accepts token writes; list it in read_only instead',
+			'network.none.read_only: the gateway has no read-only endpoint for "gitlab.com"',
+		]);
+		expect(problemsOf(MINIMAL.replace("read_only = []\n", ""))).toContain('network.none: missing field "read_only"');
 	});
 });
 
