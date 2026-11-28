@@ -131,7 +131,8 @@ flowchart LR
   4. The reservation is appended to the event log before the call is forwarded.
 - **Settlement, after the call.**
   - The proxy settles from the response's `usage`, priced by the response's `model` field, which is also the model it records (L-0018 §3).
-  - A call that ends without `usage` (a halt, a disconnect, or an error) is settled at its full reservation.
+  - A non-2xx answer from Anthropic, which Anthropic does not bill, settles at zero.
+  - Any other call that ends without `usage` settles at its full reservation: a halt, a disconnect, or a stream that stops before its final usage.
   - When the log is replayed, an unsettled reservation counts as spent.
 - **Records.** Each call produces a `model.call` event holding the model, provider, task, lane, token usage, cost, latency, status, and SHA-256 hashes of the request and response bodies. Content stays out of the permanent log (L-0025, L-0038).
 - **Wall-clock budgets.**
