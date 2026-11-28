@@ -79,7 +79,7 @@ flowchart LR
 
 - **Network.** Each task gets its own Docker network, created as `--internal`, so it has no route out. The sandbox is attached to that network only.
 - **One gateway per task.** It is a control-plane image, published to `ghcr.io/tsontario/straight-facts-gateway` and pinned as §6 describes, the same as the sandbox image. It is attached to the task network and to an egress network.
-  - On the task network it listens only on its proxy port and on the ports of the profile's read-only endpoints.
+  - On the task network it listens only on its proxy port, its model route's port, and the ports of the profile's read-only endpoints.
   - It receives the task's network profile and the halt state through a read-only mount.
 - **Model route.**
   - The gateway forwards only `POST /v1/messages` to the control plane's model proxy.
@@ -118,23 +118,26 @@ flowchart LR
   - any top-level field that is not on its allowlist;
   - any server-side tool (a `tools[]` entry with a non-custom `type`);
   - `mcp_servers`, `container`, and references to uploaded files;
-  - any content block whose source is a `url`, so Anthropic never fetches on a sandbox's behalf (only `base64` sources pass);
+  - any content block whose source is not inline (`base64`, `text`, or `content`), such as a `url`, so Anthropic never fetches on a sandbox's behalf;
   - any `anthropic-beta` value, `speed` setting, or inference-region modifier that the price policy does not list.
+- **Forwarding.** The proxy forwards the request it checked, re-serialized, never the raw text, with `inference_geo: "global"` and `service_tier: "standard_only"` set, because the policy's rates assume them. An answer whose usage reports other routing or capacity settles at its full reservation.
 - **Reservation, before forwarding.**
-  1. The proxy counts the input with `count_tokens`. If the count fails, the call is refused.
-  2. It reserves an upper bound against the task, lane, and factory budgets, in both dollars and tokens:
+  1. If even `max_tokens` at the model's lowest output rate would not fit a budget, the call is refused before anything is counted.
+  2. The proxy counts the input with `count_tokens`, at most at the task's count rate: a burst of five, refilled at one a second, shared with the sandbox's own counts. If the count fails, the call is refused.
+  3. It reserves an upper bound against the task, lane, and factory budgets, in both dollars and tokens:
      - input: the counted input plus a 10% margin, because `count_tokens` is an estimate, at the highest input-side rate for that prompt size, including cache writes;
      - output: `max_tokens` at the output rate for that tier.
 
      Every billed token counts toward the token budget: input, output, cache writes, and cache reads.
-  3. If any budget can't cover the reservation, the call is refused.
-  4. The reservation is appended to the event log before the call is forwarded.
+  4. If any budget can't cover the reservation, the call is refused.
+  5. The reservation is appended to the event log before the call is forwarded.
 - **Settlement, after the call.**
   - The proxy settles from the response's `usage`, priced by the response's `model` field, which is also the model it records (L-0018 §3).
   - A non-2xx answer from Anthropic, which Anthropic does not bill, settles at zero.
   - Any other call that ends without `usage` settles at its full reservation: a halt, a disconnect, or a stream that stops before its final usage.
   - When the log is replayed, an unsettled reservation counts as spent.
 - **Records.** Each call produces a `model.call` event holding the model, provider, task, lane, token usage, cost, latency, status, and SHA-256 hashes of the request and response bodies. Content stays out of the permanent log (L-0025, L-0038).
+  - A refusal is recorded as a `model.refused` event with a fixed code only, never text from the request, and at most once a second per task, with a count of the refusals in between. The details go back to the sandbox in the error.
 - **Wall-clock budgets.**
   - The control plane kills a task's container at the task's deadline.
   - When a lane's window or the factory's window closes, it refuses new tasks in that scope and kills the running ones.
