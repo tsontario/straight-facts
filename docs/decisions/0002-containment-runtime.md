@@ -55,10 +55,10 @@ flowchart LR
 ### 1. Sandbox (L-0024)
 
 - **One container per task.** The image is built from `oven/bun:1.4.5-debian`, pinned by digest, and adds:
-  - the omp v19.2.1 Linux binary, checked against its published SHA-256;
-  - `git`, at a pinned package version.
+  - the omp v19.2.1 Linux binary, checked against its published SHA-256 during the build;
+  - `git`, at a pinned package version, installed from snapshot.debian.org at a pinned date, so every build installs the same package versions.
 
-  The digest of the built image is recorded in the protected images file, under the image rule in `supply-chain.yml`.
+  It is published to `ghcr.io/tsontario/straight-facts-sandbox` and pinned as §6 describes. The sandbox runs only the pinned digest.
 - **Runtime restrictions:**
   - a non-root user;
   - a read-only root filesystem, with a tmpfs at `/tmp` and `HOME` placed under it;
@@ -78,7 +78,7 @@ flowchart LR
 ### 2. Gateway and network (L-0024 §2)
 
 - **Network.** Each task gets its own Docker network, created as `--internal`, so it has no route out. The sandbox is attached to that network only.
-- **One gateway per task.** It is a control-plane image, built under the same image rule, attached to the task network and to an egress network.
+- **One gateway per task.** It is a control-plane image, published to `ghcr.io/tsontario/straight-facts-gateway` and pinned as §6 describes, the same as the sandbox image. It is attached to the task network and to an egress network.
   - On the task network it listens only on its proxy port.
   - It receives the task's network profile and the halt state through a read-only mount.
 - **Model route.**
@@ -187,13 +187,39 @@ flowchart LR
 
 `supply-chain.yml` adds a rule for container images, covering both the sandbox and gateway images. An image must:
 
-- come from its official publisher;
+- come from its official publisher, or, for an image the factory builds, from its publishing workflow on `main`, with a build provenance attestation;
+- if the factory builds it, start only from images that meet this rule themselves, and install operating-system packages only from a pinned snapshot of the distribution's archive;
 - be pinned by digest;
 - be listed in the protected images file;
-- be rebuilt from the publisher's latest digest at least once a month;
-- carry no known critical vulnerability.
+- be rebuilt from the base publisher's latest digest and a current package snapshot at least once a month;
+- carry no known critical vulnerability, as Trivy reports it with its default severity source: the distribution's rating where it gives one, otherwise NVD's, and other vendors' ratings only where NVD has none. This is the behavior of the Trivy version pinned in the images file. Every scan records each finding's `Severity`, `SeveritySource`, and full `VendorSeverity` map, because `SeveritySource` alone is empty when another vendor's rating was used.
 
 Operating-system packages inside an image are exempt from the license list, and are held to the image rule's critical-only bar. Everything else in that gate still applies.
+
+**Factory-built images.** The sandbox and gateway images are built, published and pinned the same way.
+
+- **Publishing.** Only the publishing workflow builds and publishes them.
+  - It runs on `push` to `main` and on `workflow_dispatch`, never on `pull_request_target`, and only on GitHub-hosted runners. It takes no inputs, and builds exactly the commit it runs on.
+  - It builds each architecture, amd64 and arm64, on a native runner. Before pushing that exact image, it runs the image's CI tests and a Trivy scan, and a critical finding stops the publish. Trivy runs from its official image, pinned in the protected images file.
+  - It combines the two into one multi-arch index, pushes it to the image's `ghcr.io/tsontario/` package, and attests the index digest with a build provenance attestation naming the workflow and the commit.
+- **Inputs.** An image's inputs are its build pins in the images file, its build arguments, and every file in its build context. For the gateway, the build context includes its source code, so changing the code changes the inputs.
+- **Pinning.** The protected images file holds each image's build inputs and its pin: the index digest and the commit it was published from. Nothing runs an image except by its pinned digest.
+  - Changing an image takes two pull requests. The first changes the inputs. After it merges, the workflow publishes, and the second pins the new digest and commit.
+  - A pull request that changes a pin must pin an image built from the inputs on its base, so it can't pin an older image. Other pull requests only report a pin that lags the inputs, so the gap between the two pull requests doesn't block unrelated work.
+- **Checks.**
+  - CI verifies every pin with `gh attestation verify`, from `gh` 2.68.0 or later, using `--signer-workflow`, `--source-ref refs/heads/main`, `--source-digest <commit>`, and `--deny-self-hosted-runners`. It also checks that the commit is on `main`.
+  - CI runs the image's tests against an image built from the current inputs, which always blocks a merge.
+  - CI also runs them against the pinned image. A new test fails against the old pinned image by design, so whether that run blocks depends on the pin:
+    - while the pin lags the inputs, including on the inputs pull request itself, it only reports;
+    - on a pull request that changes the pin, the new pin must pass;
+    - on any other pull request with the pin current, it blocks.
+  - A scheduled workflow rescans the pinned digests weekly with Trivy, and also on `workflow_dispatch` and on every push to `main` that changes the images file, so a new pin gets a report at once. It fails when one has a critical vulnerability, or when its pin is more than 31 days old.
+  - Before starting each task, the launcher reads the rescan's latest report, not its pass or fail status, for both of the task's pinned digests: the sandbox image and the gateway image.
+    - A report that is missing or more than 8 days old is treated as a critical flag. GitHub disables scheduled workflows in a public repository after 60 days without activity, so an old clean report proves nothing.
+    - If either digest is flagged critical, the launcher refuses to start the task and records the refusal as an event.
+    - If either pin is more than 31 days old, it records that, and still starts the task.
+    - Each condition interrupts the approver once per digest (L-0032 §2), and later occurrences are only recorded. A stale pin's interruption asks the approver to approve the rebuild pull request, with the decision, options, recommendation and evidence L-0032 §3 requires.
+- **Visibility.** New GHCR packages are private. The approver makes each package public after its first publish, so pulling it needs no credential.
 
 ### 7. Known limits
 
@@ -212,11 +238,12 @@ Each limit is named in the Enforcement section of its law when that law moves of
 
 ## Build order
 
-Each step is one pull request, and each carries the CI tests that prove its mechanism.
+Each step carries the CI tests that prove its mechanism. Each is one pull request, except a step that adds a factory-built image, which takes two (§6): the first adds the inputs, the publishing workflow and the code; the second pins the published digest.
 
-1. **Sandbox image and runner.**
+1. **Sandbox image and runner.** Two pull requests.
    - Tests: no network, the workspace is the only mount, the root filesystem is read-only, the user is non-root, and no secret appears in the environment.
-2. **Gateway, per-task network, and read-only endpoints.**
+   - The second pull request adds the CI checks of the pin, the tests against the pinned image, and the scheduled rescan.
+2. **Gateway, per-task network, and read-only endpoints.** Two pull requests.
    - Tests:
      - the `none` profile reaches nothing;
      - private and Docker addresses, `*.docker.internal`, CONNECT to any port but 443, and SNI mismatches are all refused;

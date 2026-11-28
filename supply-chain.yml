@@ -9,11 +9,19 @@
 #
 # Container images (the sandbox and gateway images, decision 0002) follow their own
 # rule. An image must:
-#   - come from its official publisher;
+#   - come from its official publisher, or, for an image the factory builds, from its
+#     publishing workflow on `main`, with a build provenance attestation;
+#   - if the factory builds it, start only from images that meet this rule themselves,
+#     and install operating-system packages only from a pinned snapshot of the
+#     distribution's archive;
 #   - be pinned by digest;
 #   - be listed in the protected images file;
-#   - be rebuilt from the publisher's latest digest at least once a month;
-#   - carry no known critical vulnerability.
+#   - be rebuilt from the base publisher's latest digest and a current package
+#     snapshot at least once a month;
+#   - carry no known critical vulnerability, as Trivy reports it with its default
+#     severity source: the distribution's rating where it gives one, otherwise NVD's,
+#     and other vendors' ratings only where NVD has none. This is the behavior of the
+#     Trivy version pinned in the images file.
 # The operating-system packages inside an image (bash, coreutils, glibc, and so on) are
 # exempt from the license list below. They are held to the image rule's critical-only
 # bar, not to `vulnerability_threshold`. Every other part of this gate still applies to
