@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventLog } from "../event-log/event-log";
 import { TASK_TOKEN_HEADER } from "../gateway/endpoints";
+import { writeHaltFile } from "../halt/halt";
 import { buildImage } from "../images/images";
 import { startTaskNetwork, type TaskNetwork } from "../sandbox/network";
 import { startSandbox } from "../sandbox/sandbox";
@@ -31,6 +32,7 @@ describe.skipIf(!dockerAvailable)("a model call from omp in a sandbox", () => {
 	let network: TaskNetwork | undefined;
 	let log: EventLog;
 	let dir: string;
+	let stateDir: string | undefined;
 	let sandboxImage: string;
 	let model: string;
 	let counter = 0;
@@ -78,10 +80,14 @@ describe.skipIf(!dockerAvailable)("a model call from omp in a sandbox", () => {
 		model = [...policy.models.keys()][0] ?? "";
 		dir = mkdtempSync(join(tmpdir(), "sf-route-"));
 		log = EventLog.open(join(dir, "events.sqlite"));
+		stateDir = mkdtempSync(join(tmpdir(), "sf-route-state-"));
+		const haltDir = join(stateDir, "halt");
+		await writeHaltFile({ log, approvers: new Set(), haltDir });
 		const large = { nanoUsd: 1_000_000_000_000, tokens: 1_000_000_000 };
 		proxy = ModelProxy.start({
 			policy: { ...policy, upstream: `http://127.0.0.1:${upstream.port}` },
 			log,
+			approvers: new Set(["@approver"]),
 			key: KEY,
 			factoryBudget: large,
 			laneBudgets: new Map([["lane-0001", large]]),
@@ -89,13 +95,14 @@ describe.skipIf(!dockerAvailable)("a model call from omp in a sandbox", () => {
 			hostname: process.platform === "darwin" ? "127.0.0.1" : "0.0.0.0",
 			port: 0,
 		});
-		proxy.registerTask({ token: TOKEN, task: "route-task", lane: "lane-0001", budget: large });
+		proxy.registerTask({ token: TOKEN, task: "route-task", lane: "lane-0001", repo: "tsontario/straight-facts", budget: large });
 		sandboxImage = await buildImage("sandbox");
 		network = await startTaskNetwork(await buildImage("gateway"), {
 			taskId: `route-${process.pid}`,
 			laneId: "lane-0001",
 			repo: "tsontario/straight-facts",
 			profile: { name: "none", hosts: [], methods: [], readOnly: [] },
+			haltDir,
 			model: { proxy: `http://host.docker.internal:${proxy.port}`, token: TOKEN },
 		});
 	}, 600_000);
@@ -106,6 +113,7 @@ describe.skipIf(!dockerAvailable)("a model call from omp in a sandbox", () => {
 		upstream?.stop(true);
 		log?.close();
 		if (dir) rmSync(dir, { recursive: true, force: true });
+		if (stateDir) rmSync(stateDir, { recursive: true, force: true });
 	});
 
 	test("reaches the model with the real key, never the sandbox's, and is reserved and settled", async () => {

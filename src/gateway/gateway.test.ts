@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EventLog } from "../event-log/event-log";
+import { writeHaltFile } from "../halt/halt";
 import { testImage } from "../images/images";
 import { startTaskNetwork, type TaskNetwork } from "../sandbox/network";
 import { startSandbox } from "../sandbox/sandbox";
@@ -100,6 +102,7 @@ describe.skipIf(!dockerAvailable)("the gateway, from inside a sandbox", () => {
 	let network: TaskNetwork | undefined;
 	let workspace: string;
 	let dockerConfig: string | undefined;
+	let stateDir: string | undefined;
 	let results: Record<string, unknown> = {};
 	let counter = 0;
 
@@ -125,6 +128,9 @@ describe.skipIf(!dockerAvailable)("the gateway, from inside a sandbox", () => {
 		// Start the gateway with a docker client config whose proxies would redirect its
 		// upstream requests if the docker client copied them in.
 		dockerConfig = mkdtempSync(join(tmpdir(), "sf-gw-docker-config-"));
+		stateDir = mkdtempSync(join(tmpdir(), "sf-gw-state-"));
+		const haltDir = join(stateDir, "halt");
+		await writeHaltFile({ log: EventLog.open(":memory:"), approvers: new Set(), haltDir });
 		const proxy = "http://proxy.invalid:3128";
 		writeFileSync(join(dockerConfig, "config.json"), JSON.stringify({ proxies: { default: { httpProxy: proxy, httpsProxy: proxy, allProxy: proxy } } }));
 		const dockerHost =
@@ -143,6 +149,7 @@ describe.skipIf(!dockerAvailable)("the gateway, from inside a sandbox", () => {
 					methods: ["GET", "HEAD"],
 					readOnly: ["registry.npmjs.org", "github.com"],
 				},
+				haltDir,
 			});
 		} finally {
 			for (const [key, value] of Object.entries(saved)) {
@@ -161,6 +168,7 @@ describe.skipIf(!dockerAvailable)("the gateway, from inside a sandbox", () => {
 		await network?.stop();
 		if (workspace) rmSync(workspace, { recursive: true, force: true });
 		if (dockerConfig) rmSync(dockerConfig, { recursive: true, force: true });
+		if (stateDir) rmSync(stateDir, { recursive: true, force: true });
 	});
 
 	test("runs unprivileged, read-only and without the docker client's proxy settings", async () => {

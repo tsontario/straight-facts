@@ -28,3 +28,5 @@
 /src/images/                      @tsontario
 /policy/                          @tsontario
 /src/model-proxy/                 @tsontario
+/src/halt/                        @tsontario
+/src/control-plane/               @tsontario

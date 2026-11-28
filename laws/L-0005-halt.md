@@ -3,7 +3,7 @@ id: L-0005
 title: The halt works without the factory's cooperation
 status: active
 derives_from: ["Art. III §2"]
-enforcement: [advisory]
+enforcement: [ci]
 ---
 
 ## Statement
@@ -21,8 +21,11 @@ An off switch that relies on the thing being switched off is not an off switch. 
 
 ## Enforcement
 
-- **In force:** none (advisory).
+- **In force:** `ci`.
+  - Branch protection on `main` requires the `checks` job, which runs the halt's end-to-end test (`src/halt/halt.test.ts`, required in CI). It raises a halt on sandboxes that ignore SIGTERM and checks that they are killed within 60 seconds. It also checks that the gateway and the model proxy refuse everything in the halted scope, that deleting the halt file lifts nothing, and that a lift counts only when it is recorded in an approver's name (decision 0002 §4).
+  - Limit: an agent session run directly on the approver's Mac, outside the launcher, can append a correctly chained `halt.lifted` event in an approver's name, which lifts the halt for the model proxy, and can rewrite the halt file, which lifts it for the gateways (decision 0002 §7). Clauses 4 and 6 hold against such a session only once every session runs in a sandbox and event writers are authenticated.
+- **Built, not yet in force at runtime:** the halt command (`src/halt/cli.ts`) records the halt, rewrites the halt file and kills every container in the scope. Each task's gateway and the model proxy refuse a halted scope. No agent session runs in a sandbox until the launcher (decision 0002, step 5), so none can be stopped this way yet.
 - **Planned:**
-  - A halt flag held outside agent write access, checked by the runtime before every action.
+  - The launcher runs every session in a sandbox, refuses to start a task in a halted scope, and checks the halt before every action (`runtime`).
+  - An approver lifts a halt through the approval channel (decision 0002 §5).
   - Credential revocation as the hard stop.
-  - The halt test included in the protected gates.

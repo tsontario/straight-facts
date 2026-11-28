@@ -1,8 +1,9 @@
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, normalize } from "node:path";
 import { CONFIG_PATH, type GatewayConfig, type GatewayProfile } from "../gateway/config";
 import { GATEWAY_HOST } from "../gateway/endpoints";
+import { HALT_MOUNT } from "../gateway/halt";
 import { IMAGE, LABELS, SandboxError, clearedProxyEnv, dockerClientEnv, validateTask } from "./sandbox";
 
 /**
@@ -23,6 +24,8 @@ export interface TaskNetworkSpec {
 	readonly laneId: string;
 	readonly repo: string;
 	readonly profile: GatewayProfile;
+	/** The halt file's directory (decision 0002 §4), which the gateway mounts read-only. */
+	readonly haltDir: string;
 	/** The control plane's model proxy, as the gateway reaches it, and this task's token for it. */
 	readonly model?: NonNullable<GatewayConfig["model"]>;
 }
@@ -45,6 +48,9 @@ const START_TIMEOUT_MS = 30_000;
 export async function startTaskNetwork(gatewayImage: string, spec: TaskNetworkSpec): Promise<TaskNetwork> {
 	if (!IMAGE.test(gatewayImage)) throw new SandboxError(`invalid image reference: ${JSON.stringify(gatewayImage)}`);
 	validateTask(spec);
+	if (!isAbsolute(spec.haltDir) || normalize(spec.haltDir) !== spec.haltDir || /[,\n]/.test(spec.haltDir)) {
+		throw new SandboxError(`haltDir must be a normalized absolute path without commas or newlines: ${JSON.stringify(spec.haltDir)}`);
+	}
 	const name = `sf-task-${spec.taskId}`;
 	const egress = `sf-egress-${spec.taskId}`;
 	// Sandboxes are sf-sandbox-<task>, so no task's gateway name can be another task's sandbox.
@@ -59,7 +65,7 @@ export async function startTaskNetwork(gatewayImage: string, spec: TaskNetworkSp
 	];
 	const configDir = await mkdtemp(join(tmpdir(), "sf-gateway-"));
 	const configFile = join(configDir, "gateway.json");
-	const config: GatewayConfig = { task: spec.taskId, profile: spec.profile, model: spec.model };
+	const config: GatewayConfig = { task: spec.taskId, lane: spec.laneId, repo: spec.repo, profile: spec.profile, model: spec.model };
 	await writeFile(configFile, JSON.stringify(config));
 	// The gateway runs as another uid and must be able to read its config, though not write it.
 	await chmod(configDir, 0o755);
@@ -115,6 +121,8 @@ export async function startTaskNetwork(gatewayImage: string, spec: TaskNetworkSp
 				...clearedProxyEnv(),
 				"--mount",
 				`type=bind,source=${configFile},target=${CONFIG_PATH},readonly`,
+				"--mount",
+				`type=bind,source=${spec.haltDir},target=${HALT_MOUNT},readonly`,
 				...labels,
 				"--label",
 				"straight-facts.role=gateway",

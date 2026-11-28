@@ -139,13 +139,14 @@ function start(budgets: { task?: Amount; lane?: Amount; factory?: Amount } = {},
 	proxy = ModelProxy.start({
 		policy: upstreamOrigin === undefined ? policy : { ...policy, upstream: upstreamOrigin },
 		log,
+		approvers: new Set(["@approver"]),
 		key: KEY,
 		factoryBudget: budgets.factory ?? LARGE,
 		laneBudgets: new Map([["lane-0001", budgets.lane ?? LARGE]]),
 		hostname: "127.0.0.1",
 		port: 0,
 	});
-	const task: ProxyTask = { token: TOKEN, task: "task-1", lane: "lane-0001", budget: budgets.task ?? LARGE };
+	const task: ProxyTask = { token: TOKEN, task: "task-1", lane: "lane-0001", repo: "tsontario/straight-facts", budget: budgets.task ?? LARGE };
 	proxy.registerTask(task);
 	return proxy;
 }
@@ -301,6 +302,32 @@ describe("the model proxy", () => {
 		expect(response.status).toBe(429);
 		expect(payload(events("model.call")[0])).toMatchObject({ settled: "zero", status: 429, cost_nano_usd: 0, tokens: 0 });
 		expect(proxy?.spent("factory")).toEqual({ nanoUsd: 0, tokens: 0 });
+	});
+
+	test("refuses every call while a halt covers the task, until an approver lifts it", async () => {
+		start();
+		// The halt command appends from another process, through its own handle on the log.
+		const other = EventLog.open(join(dir, "events.sqlite"));
+		const scope = "repo:tsontario/straight-facts";
+		const count = (): Promise<number> =>
+			fetch(`http://127.0.0.1:${proxy?.port}/v1/messages/count_tokens`, {
+				method: "POST",
+				headers: { "content-type": "application/json", [TASK_TOKEN_HEADER]: TOKEN },
+				body: JSON.stringify({ model: REQUEST.model, messages: REQUEST.messages }),
+			}).then(response => response.status);
+		try {
+			other.append({ type: "halt.raised", actor: "@approver", payload: { scope, reason: "test" } });
+			const halted = await call();
+			expect([halted.status, ((await halted.json()) as { error: { type: string } }).error.type, await count()]).toEqual([503, "api_error", 503]);
+			other.append({ type: "halt.lifted", actor: "@not-an-approver", payload: { scope } });
+			expect((await call()).status).toBe(503);
+			expect(received).toEqual([]);
+			expect(events("model.refused").map(payload)).toEqual([{ code: "halted", count: 1 }]);
+			other.append({ type: "halt.lifted", actor: "@approver", payload: { scope } });
+			expect((await call()).status).toBe(200);
+		} finally {
+			other.close();
+		}
 	});
 
 	test("after a restart, counts a reservation that was never settled as spent", async () => {

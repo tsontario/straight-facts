@@ -48,6 +48,7 @@ const STATUS_TEXT: Record<number, string> = {
 	403: "Forbidden",
 	405: "Method Not Allowed",
 	431: "Request Header Fields Too Large",
+	503: "Service Unavailable",
 };
 
 export interface ProxyOptions {
@@ -57,12 +58,15 @@ export interface ProxyOptions {
 	readonly resolve?: (host: string) => Promise<Resolution>;
 	readonly httpsPort?: number;
 	readonly httpPort?: number;
+	/** True while a halt covers the task (decision 0002 §4); everything is refused then. */
+	readonly halted?: () => boolean;
 }
 
 export function startProxy(profile: GatewayProfile, log: Log, options: ProxyOptions = {}): Server {
 	const resolve = options.resolve ?? resolvePublic;
 	const httpsPort = options.httpsPort ?? 443;
 	const httpPort = options.httpPort ?? 80;
+	const halted = options.halted ?? (() => false);
 	const allowed = (host: string): boolean =>
 		!READ_ONLY_ENDPOINT_HOSTS.includes(host) && (profile.hosts.includes("*") || profile.hosts.includes(host));
 
@@ -97,6 +101,7 @@ export function startProxy(profile: GatewayProfile, log: Log, options: ProxyOpti
 			if (colon < 1 || !TOKEN.test(name)) return refuse(client, 400, "malformed header", {});
 			headers.push([name, line.slice(colon + 1).trim()]);
 		}
+		if (halted()) return refuse(client, 503, "halted", method === "CONNECT" ? { kind: "connect", target } : { kind: "http", method, target });
 		if (method === "CONNECT") return tunnel(client, target, rest);
 		return forward(client, method, target, headers);
 	}

@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as described 
 | [L-0002](L-0002-no-self-exemption.md) | No self-exemption | Art. II §4 | advisory | active |
 | [L-0003](L-0003-report-truthfully.md) | Report truthfully | Art. I §1 | advisory | active |
 | [L-0004](L-0004-approver-roster.md) | Approvals come only from the roster | Art. III §1 | advisory | active |
-| [L-0005](L-0005-halt.md) | The halt works without the factory's cooperation | Art. III §2 | advisory | active |
+| [L-0005](L-0005-halt.md) | The halt works without the factory's cooperation | Art. III §2 | ci | active |
 | [L-0006](L-0006-reserved-actions.md) | Reserved actions need prior human approval | Art. III §6 | advisory | active |
 | [L-0007](L-0007-reversibility.md) | Irreversible actions need a human | Art. III §5 | advisory | active |
 | [L-0008](L-0008-lane-charter.md) | Every lane has a human-approved charter | Art. III §1, Art. IV §1 | advisory | active |

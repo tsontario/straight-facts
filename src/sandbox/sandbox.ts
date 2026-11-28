@@ -1,5 +1,6 @@
 import { isAbsolute, normalize } from "node:path";
 import { GATEWAY_HOST, PROXY_PORT } from "../gateway/endpoints";
+import { ID_PATTERN, REPO_PATTERN } from "../util/ids";
 
 /**
  * Runs one task in its own sandbox container (L-0024, decision 0002 §1).
@@ -45,8 +46,6 @@ export const LABELS = {
 	repo: "straight-facts.repo",
 } as const;
 
-const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const TASK_NETWORK = /^sf-task-[a-z0-9][a-z0-9-]{0,62}$/;
 /** An image reference; it cannot start with `-`, so it can't be read as a flag. */
 export const IMAGE = /^[a-z0-9][a-z0-9._\/:@-]*$/;
@@ -74,9 +73,9 @@ function gatewayProxyEnv(): string[] {
 
 /** Validates the ids a task's containers and networks are named and labelled with. */
 export function validateTask(task: { readonly taskId: string; readonly laneId: string; readonly repo: string }): void {
-	if (!ID.test(task.taskId)) throw new SandboxError(`invalid task id: ${JSON.stringify(task.taskId)}`);
-	if (!ID.test(task.laneId)) throw new SandboxError(`invalid lane id: ${JSON.stringify(task.laneId)}`);
-	if (!REPO.test(task.repo)) throw new SandboxError(`invalid repository: ${JSON.stringify(task.repo)}`);
+	if (!ID_PATTERN.test(task.taskId)) throw new SandboxError(`invalid task id: ${JSON.stringify(task.taskId)}`);
+	if (!ID_PATTERN.test(task.laneId)) throw new SandboxError(`invalid lane id: ${JSON.stringify(task.laneId)}`);
+	if (!REPO_PATTERN.test(task.repo)) throw new SandboxError(`invalid repository: ${JSON.stringify(task.repo)}`);
 }
 
 export class SandboxError extends Error {

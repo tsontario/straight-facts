@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { GatewayConfigError, parseGatewayConfig } from "./config";
 
-const valid = { task: "t-1", profile: { name: "web", hosts: ["example.com"], methods: ["GET"], readOnly: ["github.com"] } };
+const valid = { task: "t-1", lane: "lane-0001", repo: "tsontario/straight-facts", profile: { name: "web", hosts: ["example.com"], methods: ["GET"], readOnly: ["github.com"] } };
 const model = { proxy: "http://host.docker.internal:7777", token: "a".repeat(40) };
 
 function withProfile(profile: Record<string, unknown>): string {
@@ -22,6 +22,10 @@ test("refuses a config that would widen what the gateway forwards", () => {
 		withProfile({ methods: ["CONNECT"] }),
 		withProfile({ readOnly: ["gitlab.com"] }),
 		JSON.stringify({ profile: valid.profile }),
+		// A lane or repo a halt scope could not name.
+		JSON.stringify({ ...valid, lane: "Lane 1" }),
+		JSON.stringify({ ...valid, repo: "straight-facts" }),
+		JSON.stringify({ ...valid, repo: "tsontario/straight-facts/extra" }),
 		// A model route anywhere but a plain host:port, or with a short or odd token.
 		JSON.stringify({ ...valid, model: { ...model, proxy: "http://host.docker.internal:7777/v1?x=1" } }),
 		JSON.stringify({ ...valid, model: { ...model, proxy: "https://host.docker.internal:7777" } }),
