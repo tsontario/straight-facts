@@ -79,7 +79,7 @@ flowchart LR
 
 - **Network.** Each task gets its own Docker network, created as `--internal`, so it has no route out. The sandbox is attached to that network only.
 - **One gateway per task.** It is a control-plane image, published to `ghcr.io/tsontario/straight-facts-gateway` and pinned as §6 describes, the same as the sandbox image. It is attached to the task network and to an egress network.
-  - On the task network it listens only on its proxy port.
+  - On the task network it listens only on its proxy port and on the ports of the profile's read-only endpoints.
   - It receives the task's network profile and the halt state through a read-only mount.
 - **Model route.**
   - The gateway forwards only `POST /v1/messages` to the control plane's model proxy.
