@@ -124,6 +124,8 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 	test("is confined by AppArmor wherever the host kernel has it", async () => {
 		const out = await runIn(["sh", "-c", "cat /sys/module/apparmor/parameters/enabled 2>/dev/null || echo N; cat /proc/self/attr/current 2>/dev/null"]);
 		const [enabled, profile] = out.split("\n");
+		// GitHub's runners are Ubuntu, which has AppArmor, so there the check can't pass vacuously.
+		if (process.env.GITHUB_ACTIONS === "true") expect(enabled).toBe("Y");
 		if (enabled === "Y") expect(profile).toStartWith("docker-default");
 	}, 30_000);
 
