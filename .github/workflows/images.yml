@@ -1,11 +1,11 @@
-# Builds, tests, publishes and attests the sandbox image (decision 0002 §6).
-# Protected core (L-0001).
+# Builds, tests, publishes and attests the factory-built images (decision 0002 §6): the
+# sandbox image today, the gateway image with step 2. Protected core (L-0001).
 #
 # Runs only on main and only on GitHub-hosted runners; never on pull_request_target.
 # Each architecture is built on a native runner and tested before it is pushed. The
 # multi-arch index is attested, and a pin pull request then records its digest and
 # this run's commit in images/images.toml.
-name: sandbox-image
+name: images
 
 on:
   push:
@@ -14,13 +14,13 @@ on:
       - images/images.toml
       - images/sandbox/**
       - src/sandbox/image.ts
-      - .github/workflows/sandbox-image.yml
+      - .github/workflows/images.yml
   workflow_dispatch:
 
 permissions: {}
 
 concurrency:
-  group: sandbox-image
+  group: images
   cancel-in-progress: false
 
 jobs:

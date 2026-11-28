@@ -10,7 +10,7 @@ import { isRecord } from "../util/guards";
  * - `buildSandboxImage` builds it locally for the engine's architecture; the
  *   containment tests run against that build.
  * - `isPublished`, `pushArch` and `publishIndex` run only in the publishing
- *   workflow on main (`.github/workflows/sandbox-image.yml`): one native build
+ *   workflow on main (`.github/workflows/images.yml`): one native build
  *   per architecture, tested and scanned, then a multi-arch index, which the
  *   workflow attests.
  *
@@ -40,7 +40,7 @@ const ROOT = join(import.meta.dir, "../..");
 export const IMAGES_PATH = join(ROOT, "images/images.toml");
 const CONTEXT = join(ROOT, "images/sandbox");
 const SOURCE_REPO = "tsontario/straight-facts";
-const PUBLISHING_WORKFLOW = `${SOURCE_REPO}/.github/workflows/sandbox-image.yml`;
+const PUBLISHING_WORKFLOW = `${SOURCE_REPO}/.github/workflows/images.yml`;
 const SHA256 = /^[0-9a-f]{64}$/;
 const PINNED_IMAGE = /^[^@\s]+@sha256:[0-9a-f]{64}$/;
 

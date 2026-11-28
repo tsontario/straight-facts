@@ -1,7 +1,7 @@
 # Container images (decision 0002 §1 and §6, the image rule in supply-chain.yml).
 # Protected core (L-0001): changing anything here needs an approver.
 #
-# Only the publishing workflow on main (.github/workflows/sandbox-image.yml) builds and
+# Only the publishing workflow on main (.github/workflows/images.yml) builds and
 # publishes an image, with a build provenance attestation. Changing an image takes two
 # pull requests: the first changes [sandbox.build]; after it merges and the workflow
 # publishes, the second pins the published digest. Rebuild from the base publisher's
