@@ -21,6 +21,8 @@ export interface ReadOnlyOptions {
 	readonly upstream?: string;
 	readonly port?: number;
 	readonly hostname?: string;
+	/** True while a halt covers the task (decision 0002 §4); everything is refused then. */
+	readonly halted?: () => boolean;
 }
 
 export function serveReadOnly(endpoint: ReadOnlyEndpoint, log: Log, options: ReadOnlyOptions = {}): ReturnType<typeof Bun.serve> {
@@ -37,6 +39,10 @@ export function serveReadOnly(endpoint: ReadOnlyEndpoint, log: Log, options: Rea
 		async fetch(request) {
 			const url = new URL(request.url);
 			const entry = { endpoint: endpoint.host, method: request.method, path: url.pathname };
+			if (options.halted?.()) {
+				log({ ...entry, decision: "refused", reason: "halted" });
+				return new Response("the task's scope is halted\n", { status: 503 });
+			}
 			if (request.method !== "GET" && request.method !== "HEAD") {
 				log({ ...entry, decision: "refused", reason: "read-only endpoint" });
 				return new Response("read-only endpoint: only GET and HEAD are allowed\n", { status: 405, headers: { allow: "GET, HEAD" } });

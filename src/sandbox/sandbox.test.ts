@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EventLog } from "../event-log/event-log";
+import { writeHaltFile } from "../halt/halt";
 import { loadImages, testImage } from "../images/images";
 import { startTaskNetwork, type TaskNetwork } from "./network";
 import { DEFAULT_LIMITS, SandboxError, sandboxRunArgs, startSandbox, type SandboxSpec } from "./sandbox";
@@ -16,6 +18,7 @@ if (process.env.CI && !dockerAvailable) throw new Error("Docker is required for 
 let image: string;
 let workspace: string;
 let taskNetwork: TaskNetwork | undefined;
+let stateDir: string | undefined;
 let counter = 0;
 
 function spec(command: string[]): SandboxSpec {
@@ -57,6 +60,8 @@ describe("sandboxRunArgs", () => {
 		expect(() => sandboxRunArgs("img", { ...good, workspace: "/tmp/w,target=/etc" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, taskId: "T 1" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, repo: "a/b/c" })).toThrow(SandboxError);
+		// A halt's scope names repositories in lowercase, so a label in any other case would escape it.
+		expect(() => sandboxRunArgs("img", { ...good, repo: "A/b" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, command: [] })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", good, { ...DEFAULT_LIMITS, tmpfsSize: "1g,exec,suid" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", good, { ...DEFAULT_LIMITS, memory: "4g --privileged" })).toThrow(SandboxError);
@@ -79,11 +84,15 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 
 	beforeAll(async () => {
 		image = await testImage("sandbox");
+		stateDir = mkdtempSync(join(tmpdir(), "sf-state-"));
+		const haltDir = join(stateDir, "halt");
+		await writeHaltFile({ log: EventLog.open(":memory:"), approvers: new Set(), haltDir });
 		taskNetwork = await startTaskNetwork(await testImage("gateway"), {
 			taskId: `test-${process.pid}`,
 			laneId: "lane-0001",
 			repo: "tsontario/straight-facts",
 			profile: { name: "none", hosts: [], methods: [], readOnly: [] },
+			haltDir,
 		});
 		workspace = mkdtempSync(join(tmpdir(), "sf-ws-"));
 		dockerHost =
@@ -94,6 +103,7 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 	afterAll(async () => {
 		await taskNetwork?.stop();
 		if (workspace) rmSync(workspace, { recursive: true, force: true });
+		if (stateDir) rmSync(stateDir, { recursive: true, force: true });
 	});
 
 	test("reaches nothing under the none profile, directly or through its gateway, and resolves no names", async () => {

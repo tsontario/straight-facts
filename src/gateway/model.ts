@@ -19,6 +19,8 @@ const COUNT_INTERVAL_MS = 1000;
 export interface ModelRouteOptions {
 	readonly port?: number;
 	readonly hostname?: string;
+	/** True while a halt covers the task (decision 0002 §4); everything is refused then. */
+	readonly halted?: () => boolean;
 }
 
 export function serveModelRoute(model: NonNullable<GatewayConfig["model"]>, log: Log, options: ModelRouteOptions = {}): ReturnType<typeof Bun.serve> {
@@ -33,6 +35,10 @@ export function serveModelRoute(model: NonNullable<GatewayConfig["model"]>, log:
 		async fetch(request) {
 			const path = new URL(request.url).pathname;
 			const entry = { kind: "model", method: request.method, path };
+			if (options.halted?.()) {
+				log({ ...entry, decision: "refused", reason: "halted" });
+				return error(503, "api_error", "the task's scope is halted");
+			}
 			if (request.method !== "POST" || !PATHS.has(path)) {
 				log({ ...entry, decision: "refused", reason: "not a model call" });
 				return error(404, "not_found_error", "only POST /v1/messages and /v1/messages/count_tokens are served");

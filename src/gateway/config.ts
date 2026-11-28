@@ -1,4 +1,5 @@
 import { isRecord } from "../util/guards";
+import { ID_PATTERN, REPO_PATTERN } from "../util/ids";
 import { READ_ONLY_ENDPOINT_HOSTS } from "./endpoints";
 
 /**
@@ -18,6 +19,9 @@ export interface GatewayProfile {
 
 export interface GatewayConfig {
 	readonly task: string;
+	/** The task's lane and repository, which a halt can be scoped to. */
+	readonly lane: string;
+	readonly repo: string;
 	readonly profile: GatewayProfile;
 	/** Where the model route forwards to, and the task token it adds. Absent: no model route. */
 	readonly model: { readonly proxy: string; readonly token: string } | undefined;
@@ -36,6 +40,8 @@ export function parseGatewayConfig(text: string): GatewayConfig {
 	const root: unknown = JSON.parse(text);
 	const profile = isRecord(root) ? root.profile : undefined;
 	if (!isRecord(root) || typeof root.task !== "string" || root.task.length === 0) throw new GatewayConfigError("task must be a non-empty string");
+	if (typeof root.lane !== "string" || !ID_PATTERN.test(root.lane)) throw new GatewayConfigError("lane must be a lane id");
+	if (typeof root.repo !== "string" || !REPO_PATTERN.test(root.repo)) throw new GatewayConfigError("repo must be owner/name");
 	if (!isRecord(profile) || typeof profile.name !== "string") throw new GatewayConfigError("profile must name a network profile");
 	const hosts = strings(profile.hosts, "profile.hosts");
 	const methods = strings(profile.methods, "profile.methods");
@@ -46,7 +52,7 @@ export function parseGatewayConfig(text: string): GatewayConfig {
 	if (badMethod !== undefined) throw new GatewayConfigError(`profile.methods: unknown method ${JSON.stringify(badMethod)}`);
 	const badEndpoint = readOnly.find(host => !READ_ONLY_ENDPOINT_HOSTS.includes(host));
 	if (badEndpoint !== undefined) throw new GatewayConfigError(`profile.readOnly: no endpoint for ${JSON.stringify(badEndpoint)}`);
-	return { task: root.task, profile: { name: profile.name, hosts, methods, readOnly }, model: modelRoute(root.model) };
+	return { task: root.task, lane: root.lane, repo: root.repo, profile: { name: profile.name, hosts, methods, readOnly }, model: modelRoute(root.model) };
 }
 
 function modelRoute(value: unknown): GatewayConfig["model"] {

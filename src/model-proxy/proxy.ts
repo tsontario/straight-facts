@@ -1,5 +1,6 @@
 import type { EventLog } from "../event-log/event-log";
 import { TASK_TOKEN_HEADER } from "../gateway/endpoints";
+import { HaltState } from "../halt/halt";
 import { isRecord } from "../util/guards";
 import { checkCountTokens, checkMessages, type RefusalCode } from "./checks";
 import { Ledger, type Scope } from "./ledger";
@@ -10,7 +11,8 @@ import { priceUsage, reserve, type Amount, type ModelPrice, type PricePolicy, ty
  * sandbox reaches Anthropic only through it, by way of the task's gateway, which
  * adds the task token. For each `POST /v1/messages` it:
  *
- * 1. finds the task by its token, and checks the request (checks.ts);
+ * 1. finds the task by its token, refuses it while a halt covers its lane or
+ *    repository (decision 0002 §4), and checks the request (checks.ts);
  * 2. refuses at once if even the cheapest outcome, `max_tokens` at the model's
  *    lowest output rate, would not fit a budget, so an exhausted task can't make
  *    it count anything;
@@ -38,12 +40,16 @@ export interface ProxyTask {
 	readonly token: string;
 	readonly task: string;
 	readonly lane: string;
+	/** The task's repository, `owner/name`, which a halt can be scoped to. */
+	readonly repo: string;
 	readonly budget: Amount;
 }
 
 export interface ModelProxyOptions {
 	readonly policy: PricePolicy;
 	readonly log: EventLog;
+	/** The approver roster: only their `halt.lifted` events lift a halt. */
+	readonly approvers: ReadonlySet<string>;
 	/** The Anthropic key, held only in this process's memory. */
 	readonly key: string;
 	readonly factoryBudget: Amount;
@@ -64,12 +70,13 @@ const COUNT_REFILL_MS = 1000;
 /** At most one refusal record per task per interval; the rest are counted into the next record. */
 const REFUSAL_INTERVAL_MS = 1000;
 
-type ProxyRefusal = RefusalCode | "count_failed" | "count_rate_limited" | "over_budget";
+type ProxyRefusal = RefusalCode | "count_failed" | "count_rate_limited" | "over_budget" | "halted";
 
 export class ModelProxy {
 	readonly #options: ModelProxyOptions;
 	readonly #tasks = new Map<string, ProxyTask>();
 	readonly #ledger: Ledger;
+	readonly #halts: HaltState;
 	readonly #server: ReturnType<typeof Bun.serve>;
 	readonly #counts = new Map<string, { tokens: number; at: number }>();
 	readonly #refusals = new Map<string, RefusalWindow>();
@@ -77,6 +84,7 @@ export class ModelProxy {
 	private constructor(options: ModelProxyOptions) {
 		this.#options = options;
 		this.#ledger = Ledger.fromLog(options.log);
+		this.#halts = new HaltState(options.log, options.approvers);
 		this.#server = Bun.serve({
 			hostname: options.hostname,
 			port: options.port,
@@ -128,6 +136,8 @@ export class ModelProxy {
 		}
 		const task = this.#tasks.get(request.headers.get(TASK_TOKEN_HEADER) ?? "");
 		if (!task) return anthropicError(401, "authentication_error", "unknown task");
+		// The log is the halt's record; the halt command appends to it from another process.
+		if (this.#halts.refresh().covers(task)) return this.#refuse(task, "halted", "the task's scope is halted", 503, "api_error");
 		let body: unknown;
 		try {
 			body = JSON.parse(await request.text());
