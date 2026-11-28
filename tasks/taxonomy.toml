@@ -75,11 +75,11 @@ law = "L-0001"
 enforced = "review"
 description = "An approver approves the change before it takes effect."
 
-# The network a task's sandbox may reach (L-0024). Planned enforcement (decision 0002):
-# every sandbox reaches only its task's gateway, which forwards traffic only to the
-# hosts listed below. Before forwarding, the gateway:
-#   - resolves each host name once, and refuses private, loopback, link-local, and
-#     Docker addresses;
+# The network a task's sandbox may reach (L-0024). Every sandbox reaches only its task's
+# gateway (decision 0002 §2), which forwards traffic only to the hosts listed below.
+# Before forwarding, the gateway:
+#   - resolves each host name once, refuses private, loopback, link-local, CGNAT,
+#     multicast and Docker addresses, and connects to the address it checked;
 #   - accepts HTTPS only as CONNECT to port 443, where the TLS SNI must match the host;
 #   - accepts plain HTTP only on port 80.
 # For HTTPS the gateway sees the host but not the method, so `methods` is enforced for
@@ -89,9 +89,9 @@ description = "An approver approves the change before it takes effect."
 # host, and is not used.
 #
 # Hosts that accept writes from anyone holding a token (github.com, registry.npmjs.org)
-# are never reachable over HTTPS. Step 2 of decision 0002 serves them through read-only
-# gateway endpoints, where `methods` is enforced. Until then, package-registries keeps
-# registry.npmjs.org; nothing runs in a sandbox yet.
+# are never reachable over HTTPS. `read_only` lists the ones a profile may read through
+# the gateway's read-only endpoints instead: plain-HTTP reverse proxies inside the task
+# network that accept only GET and HEAD and pass no credentials upstream.
 #
 # Known and accepted limits (decision 0002 §7):
 #   - Session-cookie writes: developer.mozilla.org, www.w3.org, and www.npmjs.com
@@ -104,10 +104,12 @@ description = "An approver approves the change before it takes effect."
 [network.none]
 hosts = []
 methods = []
+read_only = []
 
 [network.package-registries]
-hosts = ["registry.npmjs.org"]
-methods = ["GET", "HEAD"]
+hosts = []
+methods = []
+read_only = ["registry.npmjs.org"]
 
 [network.web-read-only]
 hosts = [
@@ -124,6 +126,7 @@ hosts = [
   "tc39.es",
 ]
 methods = ["GET", "HEAD"]
+read_only = ["github.com", "registry.npmjs.org"]
 
 # Gates that apply to any task whose changes touch the given paths, whatever its kind.
 # `@protected-core` stands for the paths declared in .github/CODEOWNERS (L-0001 §3).

@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSandboxImage, loadSandboxImages } from "./image";
+import { buildImage, loadImages } from "../images/images";
+import { startTaskNetwork, type TaskNetwork } from "./network";
 import { DEFAULT_LIMITS, SandboxError, sandboxRunArgs, startSandbox, type SandboxSpec } from "./sandbox";
 
 /**
@@ -14,11 +15,13 @@ if (process.env.CI && !dockerAvailable) throw new Error("Docker is required for 
 
 let image: string;
 let workspace: string;
+let taskNetwork: TaskNetwork | undefined;
 let counter = 0;
 
 function spec(command: string[]): SandboxSpec {
 	counter += 1;
-	return { taskId: `test-${process.pid}-${counter}`, laneId: "lane-0001", repo: "tsontario/straight-facts", workspace, command };
+	if (!taskNetwork) throw new Error("no task network");
+	return { taskId: `test-${process.pid}-${counter}`, laneId: "lane-0001", repo: "tsontario/straight-facts", network: taskNetwork.name, workspace, command };
 }
 
 /** Runs a command in a fresh sandbox, with `env` added to the control plane's environment meanwhile. */
@@ -44,8 +47,10 @@ function bytes(size: string): number {
 }
 
 describe("sandboxRunArgs", () => {
-	test("refuses specs and limits that could add docker flags, mounts or labels", () => {
-		const good: SandboxSpec = { taskId: "t-1", laneId: "lane-0001", repo: "a/b", workspace: "/tmp/w", command: ["true"] };
+	test("refuses specs and limits that could add docker flags, mounts, networks or labels", () => {
+		const good: SandboxSpec = { taskId: "t-1", laneId: "lane-0001", repo: "a/b", network: "sf-task-t-1", workspace: "/tmp/w", command: ["true"] };
+		expect(() => sandboxRunArgs("img", { ...good, network: "host" })).toThrow(SandboxError);
+		expect(() => sandboxRunArgs("img", { ...good, network: "bridge" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("--privileged", good)).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, workspace: "relative/w" })).toThrow(SandboxError);
 		expect(() => sandboxRunArgs("img", { ...good, workspace: "/tmp/w/../../etc" })).toThrow(SandboxError);
@@ -59,7 +64,7 @@ describe("sandboxRunArgs", () => {
 	});
 
 	test("refuses to run a sandbox as root", () => {
-		const good: SandboxSpec = { taskId: "t-1", laneId: "lane-0001", repo: "a/b", workspace: "/tmp/w", command: ["true"] };
+		const good: SandboxSpec = { taskId: "t-1", laneId: "lane-0001", repo: "a/b", network: "sf-task-t-1", workspace: "/tmp/w", command: ["true"] };
 		const getuid = spyOn(process, "getuid").mockReturnValue(0);
 		try {
 			expect(() => sandboxRunArgs("img", good)).toThrow(SandboxError);
@@ -73,25 +78,43 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 	let dockerHost: string;
 
 	beforeAll(async () => {
-		image = await buildSandboxImage();
+		image = await buildImage("sandbox");
+		taskNetwork = await startTaskNetwork(await buildImage("gateway"), {
+			taskId: `test-${process.pid}`,
+			laneId: "lane-0001",
+			repo: "tsontario/straight-facts",
+			profile: { name: "none", hosts: [], methods: [], readOnly: [] },
+		});
 		workspace = mkdtempSync(join(tmpdir(), "sf-ws-"));
 		dockerHost =
 			process.env.DOCKER_HOST ??
 			Bun.spawnSync(["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]).stdout.toString().trim();
 	}, 600_000);
 
-	afterAll(() => {
+	afterAll(async () => {
+		await taskNetwork?.stop();
 		if (workspace) rmSync(workspace, { recursive: true, force: true });
 	});
 
-	test("cannot reach the network or resolve names", async () => {
+	test("reaches nothing under the none profile, directly or through its gateway, and resolves no names", async () => {
+		// Prints "blocked" if the request fails, otherwise the HTTP status it got.
+		const probe = (url: string): string =>
+			`bun -e "try { console.log((await fetch('${url}', { signal: AbortSignal.timeout(5000) })).status) } catch { console.log('blocked') }"`;
 		const out = await runIn([
 			"sh",
 			"-c",
-			"getent hosts example.com >/dev/null && echo resolved; bun -e \"try { await fetch('http://1.1.1.1', { signal: AbortSignal.timeout(3000) }); console.log('reached') } catch { console.log('blocked') }\"",
+			[
+				"getent hosts example.com >/dev/null && echo resolved",
+				// Directly, without the proxy settings: the internal network has no route out.
+				`env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy ${probe("http://1.1.1.1")}`,
+				// Through the gateway: CONNECT is refused, and plain HTTP gets 405 because the
+				// none profile allows no method at all.
+				probe("https://example.com"),
+				probe("http://example.com"),
+			].join("; "),
 		]);
-		expect(out).toBe("blocked");
-	}, 30_000);
+		expect(out.split("\n")).toEqual(["blocked", "blocked", "405"]);
+	}, 60_000);
 
 	test("cannot write its root filesystem; /tmp and the workspace stay writable", async () => {
 		// /var/tmp is world-writable on the root filesystem, so only the read-only root stops writes there.
@@ -185,10 +208,11 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 
 	test("receives none of the control plane's environment or the docker client's proxy settings", async () => {
 		const secret = `sk-ant-fake-${process.pid}`;
-		// The docker client copies `proxies` from its config into containers unless the runner stops it.
+		// The docker client copies `proxies` from its config into containers unless the runner overrides them.
 		const dockerConfig = mkdtempSync(join(tmpdir(), "sf-docker-config-"));
 		const proxy = `http://user:${secret}@proxy.invalid:3128`;
-		writeFileSync(join(dockerConfig, "config.json"), JSON.stringify({ proxies: { default: { httpProxy: proxy, httpsProxy: proxy, noProxy: secret } } }));
+		const proxies = { httpProxy: proxy, httpsProxy: proxy, ftpProxy: proxy, allProxy: proxy, noProxy: secret };
+		writeFileSync(join(dockerConfig, "config.json"), JSON.stringify({ proxies: { default: proxies } }));
 		try {
 			const out = await runIn(["env"], {
 				ANTHROPIC_API_KEY: secret,
@@ -197,9 +221,23 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 				DOCKER_CONFIG: dockerConfig,
 				DOCKER_HOST: dockerHost,
 			});
-			const keys = out.split("\n").map(line => line.split("=")[0]).sort();
+			const env = Object.fromEntries(out.split("\n").map(line => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 			expect(out).not.toContain(secret);
-			expect(keys).toEqual(["BUN_INSTALL_BIN", "BUN_RUNTIME_TRANSPILER_CACHE_PATH", "HOME", "HOSTNAME", "PATH", "PWD"]);
+			const gateway = "http://gateway:3128";
+			expect(env).toEqual({
+				BUN_INSTALL_BIN: expect.any(String),
+				BUN_RUNTIME_TRANSPILER_CACHE_PATH: expect.any(String),
+				HOME: "/tmp",
+				HOSTNAME: expect.any(String),
+				PATH: expect.any(String),
+				PWD: "/workspace",
+				HTTP_PROXY: gateway,
+				HTTPS_PROXY: gateway,
+				http_proxy: gateway,
+				https_proxy: gateway,
+				NO_PROXY: "gateway",
+				no_proxy: "gateway",
+			});
 		} finally {
 			rmSync(dockerConfig, { recursive: true, force: true });
 		}
@@ -207,8 +245,7 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 
 	test("contains the pinned omp release, which runs under the sandbox's restrictions", async () => {
 		const version = await runIn(["omp", "--version"]);
-		const { build } = await loadSandboxImages();
-		expect(version).toContain(build.ompVersion);
+		expect(version).toContain((await loadImages()).sandbox.build.ompVersion);
 		// `--help` loads omp's native addon, which a read-only root and a noexec /tmp would break.
 		const help = await runIn(["sh", "-c", "omp --help >/dev/null && echo ran"]);
 		expect(help).toBe("ran");

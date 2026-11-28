@@ -1,4 +1,7 @@
 import { join } from "node:path";
+// Hosts that accept writes from anyone holding a token: never reachable over HTTPS, only
+// through the gateway's read-only endpoints (decision 0002 §2), which exist for these alone.
+import { READ_ONLY_ENDPOINT_HOSTS } from "../gateway/endpoints";
 
 /**
  * Loads and validates the task taxonomy (L-0009) from `tasks/taxonomy.toml`,
@@ -24,9 +27,12 @@ export interface Gate {
 
 export interface NetworkProfile {
 	readonly name: string;
-	/** Hosts reachable beyond the control plane; `*` means any host. */
+	/** Hosts reachable over HTTPS (CONNECT) or plain HTTP through the gateway; `*` means any public host. */
 	readonly hosts: readonly string[];
+	/** Methods allowed for plain HTTP to `hosts`. */
 	readonly methods: readonly string[];
+	/** Hosts the profile may read through the gateway's read-only endpoints (GET and HEAD only). */
+	readonly readOnly: readonly string[];
 }
 
 export interface TaskKind {
@@ -160,12 +166,21 @@ export function parseTaxonomy(text: string): Taxonomy {
 		if (!ID.test(name)) problems.push(`${where}: name must match ${ID}`);
 		const profile = asRecord(raw, where, problems);
 		if (!profile) continue;
-		onlyKeys(profile, ["hosts", "methods"], where, problems);
+		onlyKeys(profile, ["hosts", "methods", "read_only"], where, problems);
 		const hosts = strList(profile.hosts, `${where}.hosts`, problems);
 		const methods = strList(profile.methods, `${where}.methods`, problems);
+		const readOnly = strList(profile.read_only, `${where}.read_only`, problems);
 		for (const host of hosts ?? []) {
 			const problem = hostProblem(host);
 			if (problem) problems.push(`${where}.hosts: ${JSON.stringify(host)} ${problem}`);
+			if (READ_ONLY_ENDPOINT_HOSTS.includes(host)) {
+				problems.push(`${where}.hosts: ${JSON.stringify(host)} accepts token writes; list it in read_only instead`);
+			}
+		}
+		for (const host of readOnly ?? []) {
+			if (!READ_ONLY_ENDPOINT_HOSTS.includes(host)) {
+				problems.push(`${where}.read_only: the gateway has no read-only endpoint for ${JSON.stringify(host)}`);
+			}
 		}
 		for (const method of methods ?? []) {
 			if (!METHODS.includes(method)) problems.push(`${where}.methods: unknown method ${JSON.stringify(method)}`);
@@ -173,7 +188,7 @@ export function parseTaxonomy(text: string): Taxonomy {
 		if (hosts && methods && (hosts.length === 0) !== (methods.length === 0)) {
 			problems.push(`${where}: hosts and methods must both be empty or both be non-empty`);
 		}
-		if (hosts && methods) network.set(name, { name, hosts, methods });
+		if (hosts && methods && readOnly) network.set(name, { name, hosts, methods, readOnly });
 	}
 
 	const requiredForAll = resolve(root.required_for_all, "required_for_all");
