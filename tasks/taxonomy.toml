@@ -75,10 +75,31 @@ law = "L-0001"
 enforced = "review"
 description = "An approver approves the change before it takes effect."
 
-# The network a task's sandbox may reach (L-0024). Planned enforcement: every sandbox
-# reaches the control plane, which brokers model calls, memory, and messages, and
-# reaches the hosts below only through an egress proxy that allows only the listed
-# methods. `*` means any host.
+# The network a task's sandbox may reach (L-0024). Planned enforcement (decision 0002):
+# every sandbox reaches only its task's gateway, which forwards traffic only to the
+# hosts listed below. Before forwarding, the gateway:
+#   - resolves each host name once, and refuses private, loopback, link-local, and
+#     Docker addresses;
+#   - accepts HTTPS only as CONNECT to port 443, where the TLS SNI must match the host;
+#   - accepts plain HTTP only on port 80.
+# For HTTPS the gateway sees the host but not the method, so `methods` is enforced for
+# plain HTTP only; for HTTPS, the host list is the whole boundary. That is why every
+# list here is curated by the approver. A host reachable over HTTPS must accept no
+# writes, neither anonymous nor authenticated by a token. `*` would mean any public
+# host, and is not used.
+#
+# Hosts that accept writes from anyone holding a token (github.com, registry.npmjs.org)
+# are never reachable over HTTPS. Step 2 of decision 0002 serves them through read-only
+# gateway endpoints, where `methods` is enforced. Until then, package-registries keeps
+# registry.npmjs.org; nothing runs in a sandbox yet.
+#
+# Known and accepted limits (decision 0002 §7):
+#   - Session-cookie writes: developer.mozilla.org, www.w3.org, and www.npmjs.com
+#     accept writes from anyone holding a session cookie for them.
+#   - GitHub Pages: a listed host served by GitHub Pages or Fastly
+#     (raw.githubusercontent.com, www.typescriptlang.org, tc39.es) also serves any other
+#     GitHub Pages site, chosen by the Host header. That content is static and
+#     read-only.
 
 [network.none]
 hosts = []
@@ -89,7 +110,19 @@ hosts = ["registry.npmjs.org"]
 methods = ["GET", "HEAD"]
 
 [network.web-read-only]
-hosts = ["*"]
+hosts = [
+  "raw.githubusercontent.com",
+  "codeload.github.com",
+  "www.npmjs.com",
+  "developer.mozilla.org",
+  "nodejs.org",
+  "bun.com",
+  "bun.sh",
+  "www.typescriptlang.org",
+  "www.rfc-editor.org",
+  "www.w3.org",
+  "tc39.es",
+]
 methods = ["GET", "HEAD"]
 
 # Gates that apply to any task whose changes touch the given paths, whatever its kind.
