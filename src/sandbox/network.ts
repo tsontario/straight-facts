@@ -23,6 +23,8 @@ export interface TaskNetworkSpec {
 	readonly laneId: string;
 	readonly repo: string;
 	readonly profile: GatewayProfile;
+	/** The control plane's model proxy, as the gateway reaches it, and this task's token for it. */
+	readonly model?: NonNullable<GatewayConfig["model"]>;
 }
 
 export interface TaskNetwork {
@@ -57,7 +59,7 @@ export async function startTaskNetwork(gatewayImage: string, spec: TaskNetworkSp
 	];
 	const configDir = await mkdtemp(join(tmpdir(), "sf-gateway-"));
 	const configFile = join(configDir, "gateway.json");
-	const config: GatewayConfig = { task: spec.taskId, profile: spec.profile };
+	const config: GatewayConfig = { task: spec.taskId, profile: spec.profile, model: spec.model };
 	await writeFile(configFile, JSON.stringify(config));
 	// The gateway runs as another uid and must be able to read its config, though not write it.
 	await chmod(configDir, 0o755);
@@ -82,6 +84,9 @@ export async function startTaskNetwork(gatewayImage: string, spec: TaskNetworkSp
 				"--network",
 				egress,
 				"--read-only",
+				// The model route reaches the control plane's model proxy on the Docker host.
+				"--add-host",
+				"host.docker.internal:host-gateway",
 				"--tmpfs",
 				"/tmp:rw,nosuid,nodev,noexec,size=16m",
 				"--user",

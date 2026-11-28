@@ -32,6 +32,8 @@ export function serveReadOnly(endpoint: ReadOnlyEndpoint, log: Log, options: Rea
 		// Bun's default 10-second idle timeout would cut a slow upstream (a large package
 		// document is buffered before it is rewritten), and the client would retry it.
 		idleTimeout: 255,
+		// Never answer with Bun's debug page, which would show stacks.
+		development: false,
 		async fetch(request) {
 			const url = new URL(request.url);
 			const entry = { endpoint: endpoint.host, method: request.method, path: url.pathname };

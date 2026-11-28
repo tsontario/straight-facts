@@ -19,6 +19,8 @@ export interface GatewayProfile {
 export interface GatewayConfig {
 	readonly task: string;
 	readonly profile: GatewayProfile;
+	/** Where the model route forwards to, and the task token it adds. Absent: no model route. */
+	readonly model: { readonly proxy: string; readonly token: string } | undefined;
 }
 
 export const CONFIG_PATH = "/etc/straight-facts/gateway.json";
@@ -44,7 +46,16 @@ export function parseGatewayConfig(text: string): GatewayConfig {
 	if (badMethod !== undefined) throw new GatewayConfigError(`profile.methods: unknown method ${JSON.stringify(badMethod)}`);
 	const badEndpoint = readOnly.find(host => !READ_ONLY_ENDPOINT_HOSTS.includes(host));
 	if (badEndpoint !== undefined) throw new GatewayConfigError(`profile.readOnly: no endpoint for ${JSON.stringify(badEndpoint)}`);
-	return { task: root.task, profile: { name: profile.name, hosts, methods, readOnly } };
+	return { task: root.task, profile: { name: profile.name, hosts, methods, readOnly }, model: modelRoute(root.model) };
+}
+
+function modelRoute(value: unknown): GatewayConfig["model"] {
+	if (value === undefined) return undefined;
+	const proxy = isRecord(value) ? value.proxy : undefined;
+	const token = isRecord(value) ? value.token : undefined;
+	if (typeof proxy !== "string" || !/^http:\/\/[a-z0-9.-]+:\d{1,5}$/.test(proxy)) throw new GatewayConfigError("model.proxy must be http://host:port");
+	if (typeof token !== "string" || !/^[A-Za-z0-9_-]{32,}$/.test(token)) throw new GatewayConfigError("model.token must be at least 32 URL-safe characters");
+	return { proxy, token };
 }
 
 function strings(value: unknown, where: string): string[] {
