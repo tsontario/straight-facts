@@ -21,3 +21,6 @@
 /bunfig.toml                      @tsontario
 /tasks/                           @tsontario
 /src/tasks/                       @tsontario
+/images/                          @tsontario
+/src/sandbox/                     @tsontario
+/src/util/                        @tsontario
