@@ -1,0 +1,26 @@
+# Container images (decision 0002 §1 and §6, the image rule in supply-chain.yml).
+# Protected core (L-0001): changing anything here needs an approver.
+#
+# Only the publishing workflow on main (.github/workflows/sandbox-image.yml) builds and
+# publishes an image, with a build provenance attestation. Changing an image takes two
+# pull requests: the first changes [sandbox.build]; after it merges and the workflow
+# publishes, the second pins the published digest. Rebuild from the base publisher's
+# latest digest and a current package snapshot at least once a month.
+
+[sandbox]
+repository = "ghcr.io/tsontario/straight-facts-sandbox"
+
+[sandbox.build]
+# Bun's official image (Debian 13 "trixie"), published 2026-11-19.
+base = "oven/bun:1.4.5-debian@sha256:3dddea58e1f8f2240eca906b023fedb944f9a8352515a35309fd0c879fe00aaa"
+# The snapshot.debian.org timestamp every Debian package is installed from.
+debian_snapshot = "20261127T000000Z"
+# git, the only package added to the base.
+git = "1:2.47.3-0+deb13u1"
+# The omp release whose Linux binary runs each agent session (L-0013 pins omp).
+omp_version = "19.2.1"
+
+[sandbox.build.omp_sha256]
+# SHA-256 of the release assets omp-linux-x64 and omp-linux-arm64.
+amd64 = "e8b937f9bf023baa147bdd300ad5421af0a6ef8b1f350c47a9a93d5fca94feca"
+arm64 = "92d4cce4b14814f6b838aa86dcec6359f0cb089cbcc300e8463cbb5326991fe0"

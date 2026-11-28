@@ -1,0 +1,139 @@
+# Builds, tests, publishes and attests the sandbox image (decision 0002 §6).
+# Protected core (L-0001).
+#
+# Runs only on main and only on GitHub-hosted runners; never on pull_request_target.
+# Each architecture is built on a native runner and tested before it is pushed. The
+# multi-arch index is attested, and a pin pull request then records its digest and
+# this run's commit in images/images.toml.
+name: sandbox-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - images/images.toml
+      - images/sandbox/**
+      - src/sandbox/image.ts
+      - .github/workflows/sandbox-image.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: sandbox-image
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      published: ${{ steps.status.outputs.published }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Merging a pin changes images.toml; the same inputs must not be published twice.
+      - name: Is an index for these inputs already published?
+        id: status
+        run: bun src/sandbox/image.ts published
+
+  build:
+    needs: check
+    if: needs.check.outputs.published == 'false'
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and test the image
+        run: bun test src/sandbox
+
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the tested image
+        run: bun src/sandbox/image.ts push "$ARCH"
+        env:
+          ARCH: ${{ matrix.arch }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the multi-arch index
+        id: index
+        run: bun src/sandbox/image.ts publish-index
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.index.outputs.name }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+
+      - name: Show the pin
+        run: |
+          {
+            echo "### Sandbox image published"
+            echo
+            echo "Pin it in images/images.toml:"
+            echo
+            echo '```toml'
+            echo '[sandbox.pin]'
+            echo "digest = \"$DIGEST\""
+            echo "commit = \"$GITHUB_SHA\""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
