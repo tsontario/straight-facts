@@ -5,8 +5,10 @@
 # publishes an image, with a build provenance attestation. Changing an image takes two
 # pull requests: the first changes its inputs ([<image>.build], its Dockerfile, or the
 # source built into it); after it merges and the workflow publishes, the second pins the
-# published digest. Rebuild from the base publisher's latest digest and a current
-# package snapshot at least once a month.
+# published digest in [<image>.pin]. Nothing runs an image except by its pinned digest.
+# CI verifies every pin's attestation, and a pull request that changes a pin must pin
+# the image built from the current inputs. Rebuild from the base publisher's latest
+# digest and a current package snapshot at least once a month.
 
 [sandbox]
 repository = "ghcr.io/tsontario/straight-facts-sandbox"
@@ -26,6 +28,12 @@ omp_version = "19.2.1"
 amd64 = "e8b937f9bf023baa147bdd300ad5421af0a6ef8b1f350c47a9a93d5fca94feca"
 arm64 = "92d4cce4b14814f6b838aa86dcec6359f0cb089cbcc300e8463cbb5326991fe0"
 
+[sandbox.pin]
+# The multi-arch index the publishing workflow attested, and the commit on main it was
+# built from.
+digest = "sha256:9f956e5c928066c8973766421ff5744633b764739ff6a3025dde2b6fc0851f68"
+commit = "6c9ecc8a52304e91a50e1e4c721095882e200a0e"
+
 [gateway]
 repository = "ghcr.io/tsontario/straight-facts-gateway"
 
@@ -34,8 +42,13 @@ repository = "ghcr.io/tsontario/straight-facts-gateway"
 # installed into it, so it needs no package snapshot.
 base = "oven/bun:1.4.5-distroless@sha256:3a210956422ad81cf7532e1fc1f2eb9275d6ef4c2337a9d25d530f798e80726a"
 
+[gateway.pin]
+digest = "sha256:f07b6ff7e28632b809766e1fb3c04fe63327f53f442d1314fce0347f2e90f47e"
+commit = "6c9ecc8a52304e91a50e1e4c721095882e200a0e"
+
 [tools]
-# The scanner the publishing workflow runs on each image before pushing it (decision 0002
-# §6): Trivy v0.76.2, Apache-2.0, the official multi-arch image. Its default severity
-# source decides what counts as critical.
+# The scanner the publishing workflow runs on each image before pushing it, and the
+# weekly rescan runs on each pinned image (decision 0002 §6): Trivy v0.76.2, Apache-2.0,
+# the official multi-arch image. Its default severity source decides what counts as
+# critical.
 trivy = "aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb"

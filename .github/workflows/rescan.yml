@@ -1,0 +1,52 @@
+# Rescans the pinned sandbox and gateway images (decision 0002 §6). Protected core (L-0001).
+#
+# Weekly, on demand, and whenever main's images file changes, so a new pin is reported at
+# once. Both architectures of each pinned image are scanned with the Trivy pinned in the
+# images file. The run fails on a critical finding, or on a pin more than 31 days old,
+# after writing its report; the report is uploaded either way, and the launcher reads it
+# before starting each task. A run that can't finish its scans uploads no report, and a
+# report that is missing or more than 8 days old counts as a critical finding.
+name: rescan
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - images/images.toml
+
+permissions: {}
+
+concurrency:
+  group: rescan
+  cancel-in-progress: false
+
+jobs:
+  rescan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Rescan the pinned images
+        run: bun src/images/images.ts rescan rescan-report.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: rescan-report
+          path: rescan-report.json
+          if-no-files-found: error
+          retention-days: 90

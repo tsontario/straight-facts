@@ -1,5 +1,5 @@
-# Typecheck and tests for the control plane (L-0014, L-0021). A required check on main (L-0039).
-# Protected core (L-0001).
+# Typecheck and tests for the control plane (L-0014, L-0021), and the image pins (decision
+# 0002 §6). A required check on main (L-0039). Protected core (L-0001).
 name: checks
 
 on:
@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  attestations: read
 
 jobs:
   checks:
@@ -30,3 +31,44 @@ jobs:
 
       - name: Test
         run: bun test
+
+      # Every pin's build provenance attestation, from the publishing workflow on main for
+      # its commit, and the commit on main. On a pull request, a pin it sets must be built
+      # from the inputs on its base, which it must leave alone; the base is checked out
+      # beside this checkout to hash them. A pin that only lags the inputs is reported.
+      - name: Verify the image pins
+        id: pins
+        run: |
+          if [ -n "$BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE"
+            git worktree add --detach "$RUNNER_TEMP/base" "$BASE"
+            bun src/images/images.ts verify-pins "$RUNNER_TEMP/base"
+          else
+            bun src/images/images.ts verify-pins
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+
+      # The images' tests against every current pin, with any lagging image built from its
+      # inputs instead. A current pin always blocks, a newly set one included.
+      - name: Test against the current pins
+        if: steps.pins.outputs.current != ''
+        run: |
+          read -ra dirs <<< "$TESTS"
+          bun test "${dirs[@]}"
+        env:
+          STRAIGHT_FACTS_TEST_IMAGES: ${{ steps.pins.outputs.current }}
+          TESTS: ${{ steps.pins.outputs.tests }}
+
+      # The same tests against the pins that lag their inputs. New tests are expected to
+      # fail against an image built before them, so this only reports.
+      - name: Test against the lagging pins (report only)
+        if: steps.pins.outputs.lagging != ''
+        continue-on-error: true
+        run: |
+          read -ra dirs <<< "$TESTS"
+          bun test "${dirs[@]}"
+        env:
+          STRAIGHT_FACTS_TEST_IMAGES: ${{ steps.pins.outputs.lagging }}
+          TESTS: ${{ steps.pins.outputs.tests }}

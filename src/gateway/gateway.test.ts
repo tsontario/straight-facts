@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildImage } from "../images/images";
+import { testImage } from "../images/images";
 import { startTaskNetwork, type TaskNetwork } from "../sandbox/network";
 import { startSandbox } from "../sandbox/sandbox";
 
@@ -120,8 +120,8 @@ describe.skipIf(!dockerAvailable)("the gateway, from inside a sandbox", () => {
 	}
 
 	beforeAll(async () => {
-		sandboxImage = await buildImage("sandbox");
-		const gatewayImage = await buildImage("gateway");
+		sandboxImage = await testImage("sandbox");
+		const gatewayImage = await testImage("gateway");
 		// Start the gateway with a docker client config whose proxies would redirect its
 		// upstream requests if the docker client copied them in.
 		dockerConfig = mkdtempSync(join(tmpdir(), "sf-gw-docker-config-"));
