@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildImage } from "../images/images";
+import { testImage } from "../images/images";
 import { startTaskNetwork } from "./network";
 
 const dockerAvailable = Bun.spawnSync(["docker", "info"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
@@ -8,7 +8,7 @@ if (process.env.CI && !dockerAvailable) throw new Error("Docker is required for 
 describe.skipIf(!dockerAvailable)("startTaskNetwork", () => {
 	test("on failure removes only what it created, never a container that already held a name", async () => {
 		const taskId = `net-${process.pid}`;
-		const [sandboxImage, gatewayImage] = await Promise.all([buildImage("sandbox"), buildImage("gateway")]);
+		const [sandboxImage, gatewayImage] = await Promise.all([testImage("sandbox"), testImage("gateway")]);
 		// Another container already holds the gateway's name, so creating the gateway fails.
 		const squatter = Bun.spawnSync(["docker", "create", "--name", `sf-gateway-${taskId}`, sandboxImage, "true"]).stdout.toString().trim();
 		try {

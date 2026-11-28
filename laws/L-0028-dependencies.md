@@ -3,7 +3,7 @@ id: L-0028
 title: Dependencies pass the supply-chain gate
 status: active
 derives_from: ["Art. VII §6"]
-enforcement: [advisory]
+enforcement: [ci]
 ---
 
 ## Statement
@@ -24,6 +24,11 @@ Protecting the allowlist and threshold stops the factory from lowering the bar t
 
 ## Enforcement
 
-- **In force:** none (advisory). The license allowlist and vulnerability threshold are declared in `supply-chain.yml`, which is protected core. Checks against them are done by hand and recorded in the pull request that adds each dependency.
+- **In force:** `ci`, for container images only (decision 0002 §6, the image rule in `supply-chain.yml`).
+  - The publishing workflow on `main` scans each sandbox and gateway image with the Trivy pinned in `images/images.toml` before pushing it, and refuses it on a critical finding.
+  - Branch protection on `main` requires the `checks` job. It verifies each pinned image's build provenance attestation from the publishing workflow on `main` and checks that its commit is on `main`. A pull request that sets a pin must pin the image built from the inputs on its base.
+  - The weekly rescan (`.github/workflows/rescan.yml`) fails when a pinned image has a critical finding, or when its pin is more than 31 days old.
+- **Not yet in force:** every other dependency. The license allowlist and vulnerability threshold are declared in `supply-chain.yml`, which is protected core. Checks against them are done by hand and recorded in the pull request that adds each dependency.
 - **Planned:**
   - A CI gate checks the lockfile, license, and vulnerabilities on every change to the dependency manifest, against `supply-chain.yml`.
+  - The launcher refuses to start a task while the latest rescan flags either of its pinned images (decision 0002 §6).

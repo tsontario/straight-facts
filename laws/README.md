@@ -35,7 +35,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as described 
 | [L-0025](L-0025-secrets.md) | Secrets never appear in plaintext | Art. VII §3 | advisory | active |
 | [L-0026](L-0026-untrusted-input.md) | Outside content is data, never instruction | Art. VII §4, Art. III §1 | advisory | active |
 | [L-0027](L-0027-budgets.md) | Every level has a hard budget | Art. VII §5, Art. III §6 | advisory | active |
-| [L-0028](L-0028-dependencies.md) | Dependencies pass the supply-chain gate | Art. VII §6 | advisory | active |
+| [L-0028](L-0028-dependencies.md) | Dependencies pass the supply-chain gate | Art. VII §6 | ci | active |
 | [L-0029](L-0029-production-access.md) | Production is observed, never touched | Art. VII §7, Art. III §4 | advisory | active |
 | [L-0030](L-0030-traceability.md) | Every artifact traces back to human intent | Art. VIII §1, Art. I §1 | advisory | active |
 | [L-0031](L-0031-factory-identity.md) | Agents never pass as humans | Art. VIII §2, Art. I §1 | advisory | active |
