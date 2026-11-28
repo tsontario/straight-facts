@@ -1,0 +1,68 @@
+# The model price policy (decision 0002 §3, L-0018, L-0027). Protected core (L-0001).
+#
+# The model proxy forwards a call only for a model listed here, and prices every call
+# from this file. Rates are USD per million tokens, copied from Anthropic's pricing page
+# (https://platform.claude.com/docs/en/about-claude/pricing), read on 2026-11-28. A rate
+# may have at most three decimal places. Every call is billed at global routing:
+# `inference_geo`, fast mode (`speed`) and service tiers are refused, because they change
+# rates that are not listed here.
+
+[anthropic]
+upstream = "https://api.anthropic.com"
+# The anthropic-beta values the proxy forwards: the ones omp sends by default. None of
+# them changes a rate. A call carrying any other beta is refused.
+betas = [
+  "context-management-2025-06-27",
+  "effort-2025-11-24",
+  "mid-conversation-output-config-2026-07-01",
+  "mid-conversation-system-clear-at-2026-08-21",
+  "mid-conversation-tool-changes-2026-07-01",
+  "thinking-binding-controls-2026-08-01",
+]
+
+# Each model has one or more price tiers, chosen by the prompt's length: its input
+# tokens, cache writes and cache reads. A tier applies up to and including
+# `max_prompt_tokens`; the last tier has no limit.
+
+[[anthropic.models]]
+id = "claude-fable-5-2"
+[[anthropic.models.tiers]]
+input = 8
+cache_write_5m = 10
+cache_write_1h = 16
+cache_read = 0.2
+output = 40
+
+[[anthropic.models]]
+id = "claude-opus-5-5"
+[[anthropic.models.tiers]]
+input = 4
+cache_write_5m = 5
+cache_write_1h = 8
+cache_read = 0.2
+output = 20
+
+[[anthropic.models]]
+id = "claude-sonnet-5-5"
+[[anthropic.models.tiers]]
+input = 2
+cache_write_5m = 2.5
+cache_write_1h = 4
+cache_read = 0.1
+output = 10
+
+[[anthropic.models]]
+id = "claude-haiku-5-5"
+[[anthropic.models.tiers]]
+max_prompt_tokens = 100000
+input = 0.1
+cache_write_5m = 0.125
+cache_write_1h = 0.2
+cache_read = 0.01
+output = 0.5
+[[anthropic.models.tiers]]
+input = 0.5
+cache_write_5m = 0.625
+cache_write_1h = 1
+cache_read = 0.05
+output = 2.5

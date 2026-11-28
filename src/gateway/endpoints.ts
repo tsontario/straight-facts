@@ -10,6 +10,10 @@
 export const GATEWAY_HOST = "gateway";
 /** The forward proxy: CONNECT for HTTPS, absolute-form requests for plain HTTP. */
 export const PROXY_PORT = 3128;
+/** The model route: the sandbox's `ANTHROPIC_BASE_URL`, forwarded to the control plane's model proxy. */
+export const MODEL_PORT = 4080;
+/** The header the gateway adds to model calls; the sandbox never sees the token it carries. */
+export const TASK_TOKEN_HEADER = "x-straight-facts-task-token";
 
 export interface ReadOnlyEndpoint {
 	readonly host: string;

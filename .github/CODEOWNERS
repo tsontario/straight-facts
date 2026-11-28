@@ -26,3 +26,5 @@
 /src/util/                        @tsontario
 /src/gateway/                     @tsontario
 /src/images/                      @tsontario
+/policy/                          @tsontario
+/src/model-proxy/                 @tsontario
