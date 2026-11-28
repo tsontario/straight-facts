@@ -21,7 +21,8 @@ ARG DEBIAN_SNAPSHOT
 ARG GIT_VERSION
 USER root
 # Every Debian package comes from snapshot.debian.org at the pinned time. The build fails
-# if any apt source, in any file, points anywhere else.
+# if a source line names anywhere else, and again if apt fetched an index from anywhere
+# else, which also catches sources configured outside the usual files.
 RUN sed -i \
       -e "s#http://deb.debian.org/debian-security#https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}#" \
       -e "s#http://deb.debian.org/debian#https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}#" \
@@ -31,6 +32,12 @@ RUN sed -i \
       echo "apt source outside the pinned snapshot" >&2; exit 1; \
     fi \
  && apt-get -o Acquire::Check-Valid-Until=false update \
+ && for list in /var/lib/apt/lists/*; do \
+      case "${list##*/}" in \
+        lock|partial|auxfiles|"snapshot.debian.org_archive_"*"_${DEBIAN_SNAPSHOT}_"*) ;; \
+        *) echo "apt index from outside the pinned snapshot: ${list}" >&2; exit 1 ;; \
+      esac; \
+    done \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "git=${GIT_VERSION}" \
  && rm -rf /var/lib/apt/lists/*
 

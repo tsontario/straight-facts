@@ -133,21 +133,33 @@ export async function buildSandboxImage(): Promise<string> {
  * Publishing workflow only: whether the index for the current inputs is
  * published and attested by this workflow on main. Merging a pin changes the
  * images file and triggers the workflow, but must not republish the same inputs.
- * Any failure other than "not found" is an error, not "unpublished".
+ *
+ * Unpublished: no index, or an index that was never attested (a run that
+ * failed between pushing and attesting). Any other failure is an error, and so
+ * is an attestation that exists but does not verify.
  */
 export async function isPublished(): Promise<boolean> {
 	const { repository, build } = await loadSandboxImages();
 	const tag = `${repository}:${await inputsHash(build)}`;
-	const inspect = await exec(["docker", "buildx", "imagetools", "inspect", tag]);
+	const inspect = await exec(["docker", "buildx", "imagetools", "inspect", tag, "--format", "{{json .Manifest}}"]);
 	if (inspect.code !== 0) {
-		if (/not found|manifest unknown/i.test(inspect.stderr)) return false;
+		// GHCR answers "denied" rather than "not found" for a package that has never been published.
+		if (/not found|manifest unknown|denied|403 Forbidden/i.test(inspect.stderr)) return false;
 		throw new ImageError(`inspecting ${tag}: ${inspect.stderr.trim()}`);
 	}
-	const verify = await exec([
+	const manifest: unknown = JSON.parse(inspect.stdout);
+	const digest = isRecord(manifest) ? manifest.digest : undefined;
+	if (typeof digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest)) throw new ImageError(`${tag}: no index digest`);
+	const lookup = await exec(["gh", "api", `repos/${SOURCE_REPO}/attestations/${digest}`, "--jq", ".attestations | length"]);
+	if (lookup.code !== 0 && !/HTTP 404/.test(lookup.stderr)) {
+		throw new ImageError(`looking up attestations for ${digest}: ${lookup.stderr.trim()}`);
+	}
+	if (lookup.code !== 0 || lookup.stdout.trim() === "0") return false;
+	await run([
 		"gh",
 		"attestation",
 		"verify",
-		`oci://${tag}`,
+		`oci://${repository}@${digest}`,
 		"--repo",
 		SOURCE_REPO,
 		"--signer-workflow",
@@ -156,7 +168,7 @@ export async function isPublished(): Promise<boolean> {
 		"refs/heads/main",
 		"--deny-self-hosted-runners",
 	]);
-	return verify.code === 0;
+	return true;
 }
 
 /**
@@ -202,9 +214,14 @@ async function scan(image: string, trivy: string): Promise<void> {
 				"/scan/image.tar",
 			]),
 		);
-		const findings = (isRecord(report) && Array.isArray(report.Results) ? report.Results : []).flatMap(result =>
-			isRecord(result) && Array.isArray(result.Vulnerabilities) ? result.Vulnerabilities.filter(isRecord) : [],
-		);
+		// A report with no Debian packages scanned would otherwise pass as clean.
+		const results = isRecord(report) && Array.isArray(report.Results) ? report.Results.filter(isRecord) : [];
+		const metadata = isRecord(report) ? report.Metadata : undefined;
+		const os = isRecord(metadata) ? metadata.OS : undefined;
+		if (!isRecord(os) || os.Family !== "debian" || !results.some(result => result.Class === "os-pkgs")) {
+			throw new ImageError(`${image}: Trivy found no Debian packages to scan`);
+		}
+		const findings = results.flatMap(result => (Array.isArray(result.Vulnerabilities) ? result.Vulnerabilities.filter(isRecord) : []));
 		// SeveritySource is empty when another vendor's rating was used, so the full map is logged too.
 		for (const finding of findings) {
 			const fields = [finding.VulnerabilityID, finding.PkgName, finding.Severity, finding.SeveritySource || "(none)"].map(String);

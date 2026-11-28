@@ -115,13 +115,28 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 		if (enabled === "Y") expect(profile).toStartWith("docker-default");
 	}, 30_000);
 
-	test("sees only its own processes and IPC", async () => {
-		const out = await runIn(["sh", "-c", "tr '\\0' ' ' < /proc/1/cmdline; echo; df -k /dev/shm | tail -1 | awk '{print $2}'"]);
-		const [pid1, shmKiB] = out.split("\n");
+	test("sees only its own processes, IPC and hostname", async () => {
+		const out = await runIn(["sh", "-c", "tr '\\0' ' ' < /proc/1/cmdline; echo; df -k /dev/shm | tail -1 | awk '{print $2}'; hostname"]);
+		const [pid1, shmKiB, hostname] = out.split("\n");
 		// PID 1 is the sandbox's own command: no host processes are visible.
 		expect(pid1).toStartWith("sh -c tr");
 		// A private 64 MiB /dev/shm, not the host's.
 		expect(shmKiB).toBe("65536");
+		// Docker names a container's own UTS namespace after its id.
+		expect(hostname).toMatch(/^[0-9a-f]{12}$/);
+	}, 30_000);
+
+	test("has no host devices and no host sockets", async () => {
+		// A host socket can only arrive as a bind mount. Docker creates its mount point as a
+		// regular file, so `find -type s` misses it; testing each mount point catches it.
+		const out = await runIn([
+			"sh",
+			"-c",
+			"find /dev \\( -type c -o -type b \\) | sort | tr '\\n' ' '; echo; awk '{print $5}' /proc/self/mountinfo | while read -r point; do [ -S \"$point\" ] && echo \"$point\"; done; true",
+		]);
+		const [devices, ...sockets] = out.split("\n");
+		expect(devices?.trim().split(" ")).toEqual(["/dev/full", "/dev/null", "/dev/pts/ptmx", "/dev/random", "/dev/tty", "/dev/urandom", "/dev/zero"]);
+		expect(sockets).toEqual([]);
 	}, 30_000);
 
 	test("is held to its memory, swap, CPU and process limits", async () => {
@@ -150,7 +165,8 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 			({ point, type }) => !allowed.has(point) && !(/^\/(proc|dev|sys)(\/|$)/.test(point) && kernelTypes.has(type)),
 		);
 		expect(unexpected).toEqual([]);
-		expect(mounts.map(mount => mount.point)).toContain("/workspace");
+		// Docker's masked and read-only kernel paths are still covered.
+		expect(mounts.map(mount => mount.point)).toEqual(expect.arrayContaining(["/workspace", "/proc/kcore", "/proc/sys", "/sys/firmware"]));
 	}, 30_000);
 
 	test("receives none of the control plane's environment or the docker client's proxy settings", async () => {

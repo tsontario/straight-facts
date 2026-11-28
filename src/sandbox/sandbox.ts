@@ -100,6 +100,8 @@ export function sandboxRunArgs(image: string, spec: SandboxSpec, limits: Sandbox
 		String(limits.cpus),
 		"--ipc",
 		"private",
+		"--shm-size",
+		"64m",
 		"--env",
 		"HOME=/tmp",
 		...PROXY_VARIABLES.flatMap(name => ["--env", name]),
