@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildImage, loadImages } from "../images/images";
+import { loadImages, testImage } from "../images/images";
 import { startTaskNetwork, type TaskNetwork } from "./network";
 import { DEFAULT_LIMITS, SandboxError, sandboxRunArgs, startSandbox, type SandboxSpec } from "./sandbox";
 
@@ -78,8 +78,8 @@ describe.skipIf(!dockerAvailable)("a running sandbox", () => {
 	let dockerHost: string;
 
 	beforeAll(async () => {
-		image = await buildImage("sandbox");
-		taskNetwork = await startTaskNetwork(await buildImage("gateway"), {
+		image = await testImage("sandbox");
+		taskNetwork = await startTaskNetwork(await testImage("gateway"), {
 			taskId: `test-${process.pid}`,
 			laneId: "lane-0001",
 			repo: "tsontario/straight-facts",
