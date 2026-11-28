@@ -304,9 +304,14 @@ describe.skipIf(!dockerAvailable)("a halt, end to end", () => {
 		const scope = `lane:${lane}`;
 		expect((await raiseHalt(options, scope, "control-plane", "test")).killed).toEqual([]);
 		const network = await taskNetwork(`halt-c-${pid}`, lane, repo);
-		// The gateway can't rewrite the halt file it reads, on Docker Desktop or Linux.
+		// The gateway can't rewrite the halt file it reads. Its mount is read-only: on Docker
+		// Desktop, where any container user may write a bind mount, that flag alone stops the
+		// write; on Linux the file's owner and mode refuse it first.
+		const mounts: unknown = JSON.parse(Bun.spawnSync(["docker", "inspect", "--format", "{{json .Mounts}}", network.gateway]).stdout.toString());
+		const haltMount = Array.isArray(mounts) ? mounts.find(mount => isRecord(mount) && mount.Destination === "/etc/straight-facts/halt") : undefined;
+		expect(haltMount).toMatchObject({ Type: "bind", RW: false });
 		const write = 'try { require("fs").writeFileSync("/etc/straight-facts/halt/halt.json", "{\\"scopes\\":[]}"); console.log("written") } catch (error) { console.log(error.code) }';
-		expect(Bun.spawnSync(["docker", "exec", network.gateway, "/usr/local/bin/bun", "-e", write]).stdout.toString().trim()).toBe("EROFS");
+		expect(["EROFS", "EACCES"]).toContain(Bun.spawnSync(["docker", "exec", network.gateway, "/usr/local/bin/bun", "-e", write]).stdout.toString().trim());
 		const halted = { proxy: 503, npm: 503, model: 503 };
 		expect(answers(network.gateway)).toEqual(halted);
 		rmSync(join(options.haltDir, HALT_FILE_NAME));
